@@ -125,9 +125,6 @@ Which agents count in the Costs charts and the mini/bar stats is a toggle (`agen
   a Claude `Workflow` call has `agents ↗`, which expands that workflow's agents in the sidebar. Works for opencode (`task`)
   and Claude Code (`Agent`, `SendMessage`, `Workflow`). codex: see issue #1.
 
-## TODO
-- codex subagent jump (issue #1).
-
 ## Releases
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which builds and attaches to a GitHub release:
 `agent-viewer-linux-amd64.tar.gz` (web UI server), `agent-viewer-windows-amd64.zip` (console exe; web UI or `-gui`),
