@@ -291,11 +291,11 @@ class View {
     const models = st.firstModel && st.lastModel && st.firstModel !== st.lastModel ? `${st.firstModel} → ${st.lastModel}` : (st.lastModel || st.firstModel || "?");
     const chips = [
       chip("model", models, "first → latest model in this session"),
-      chip("in", fmtTok(input), "total input = new + cache read + cache write"),
+      chip("in", fmtTok(u.input), "new (uncached) input; total input = in + cache read + cache write"),
       chip("cache read", fmtTok(u.cacheRead)),
       chip("cache write", fmtTok(u.cacheWrite)),
       chip("out", fmtTok(u.output), u.reasoning ? `includes/plus reasoning ${u.reasoning}` : ""),
-      chip("hit", input ? (100 * (u.cacheRead || 0) / input).toFixed(1) + "%" : "–", "cache read / total input"),
+      chip("hit", input ? (100 * (u.cacheRead || 0) / input).toFixed(1) + "%" : "–", "cache read / (in + cache read + cache write)"),
     ];
     if (st.contextUsed) chips.push(chip("ctx", fmtTok(st.contextUsed) + (st.contextWindow ? ` / ${fmtTok(st.contextWindow)} (${(100 * st.contextUsed / st.contextWindow).toFixed(0)}%)` : ""), "prompt size of the latest request / context window"));
     chips.push(chip("price", st.cost == null ? "n/a" : "$" + st.cost.toFixed(4), st.cost == null ? "this agent does not record price" : ""));

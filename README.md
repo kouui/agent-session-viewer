@@ -40,7 +40,7 @@ Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second 
 - opencode session `mtime` = max(session.time_updated, newest message time_created).
 
 ## Session header stats
-model (first → latest), total in (= new + cache read + cache write), cache read, cache write, out,
+model (first → latest), in (new, uncached input only; total input = in + cache read + cache write), cache read, cache write, out,
 cache hit rate (cache read / total in), context length (prompt size of the latest request, plus
 window and % when the agent records it), price. Backends fill `Stats` in `model.go`.
 - opencode: session-row totals + recorded cost; context window is not recorded (shown without %).
