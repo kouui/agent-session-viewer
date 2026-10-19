@@ -10,7 +10,7 @@ Supported: **opencode** (`opencode.db`, SQLite) and **codex** (`~/.codex/session
 make linux      # dist/agent-viewer-linux        (Linux / WSL)
 make windows    # dist/agent-viewer-windows.exe  (Windows, console)
 make windows-gui # dist/agent-viewer-gui.exe      (Windows, no console, opens the window)
-make all        # both
+make all        # all three
 ./dist/agent-viewer-linux  # http://127.0.0.1:9191
 ```
 
@@ -85,3 +85,8 @@ window and % when the agent records it), price. Backends fill `Stats` in `model.
 ## TODO
 - Claude Code support (a new `Backend` for `~/.claude/projects/**/*.jsonl`).
 - Clicking a subagent call jumps to (opens) that subagent session in another tab.
+
+## Releases
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which builds and attaches to a GitHub release:
+`agent-viewer-linux-amd64.tar.gz` (web UI server), `agent-viewer-windows-amd64.zip` (console exe; web UI or `-gui`),
+`agent-viewer-gui-windows-amd64.zip` (no-console window) and `SHA256SUMS`. There is no Linux GUI build.
