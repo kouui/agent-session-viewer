@@ -13,18 +13,15 @@ import (
 
 // Session is one conversation, with its project already resolved.
 type Session struct {
-	Source      string  `json:"source"` // Source.Label, set by the server
-	Kind        string  `json:"kind"`   // backend kind, e.g. "opencode", "codex"
-	ID          string  `json:"id"`
-	Title       string  `json:"title"`
-	Directory   string  `json:"directory"`
-	ParentID    string  `json:"parentId,omitempty"`
-	TimeCreated int64   `json:"timeCreated"` // unix ms
-	MTime       int64   `json:"mtime"`       // unix ms, last activity
-	Archived    bool    `json:"archived,omitempty"`
-	Cost        float64 `json:"cost,omitempty"`
-	TokensIn    int64   `json:"tokensIn,omitempty"`
-	TokensOut   int64   `json:"tokensOut,omitempty"`
+	Source      string `json:"source"` // Source.Label, set by the server
+	Kind        string `json:"kind"`   // backend kind, e.g. "opencode", "codex"
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Directory   string `json:"directory"`
+	ParentID    string `json:"parentId,omitempty"`
+	TimeCreated int64  `json:"timeCreated"` // unix ms
+	MTime       int64  `json:"mtime"`       // unix ms, last activity
+	Archived    bool   `json:"archived,omitempty"`
 
 	ProjectKey  string `json:"-"` // grouping key (normalized path / id)
 	ProjectName string `json:"-"`
@@ -37,6 +34,20 @@ type Usage struct {
 	Reasoning  int64 `json:"reasoning,omitempty"`
 	CacheRead  int64 `json:"cacheRead,omitempty"`
 	CacheWrite int64 `json:"cacheWrite,omitempty"`
+}
+
+// Stats are session-level totals shown in the view header.
+// Usage.Input is NEW (uncached) input only: total input = Input + CacheRead +
+// CacheWrite, so backends whose native "input" already includes cache (codex)
+// must subtract it. Cost is nil when the backend cannot know the price.
+type Stats struct {
+	Usage Usage    `json:"usage"`
+	Cost  *float64 `json:"cost,omitempty"`
+	// Context is the prompt size of the latest request; Window is 0 when unknown.
+	ContextUsed   int64  `json:"contextUsed,omitempty"`
+	ContextWindow int64  `json:"contextWindow,omitempty"`
+	FirstModel    string `json:"firstModel,omitempty"`
+	LastModel     string `json:"lastModel,omitempty"`
 }
 
 // Part kinds.
@@ -97,6 +108,7 @@ type Backend interface {
 	Path() string
 	Sessions() ([]Session, error)
 	Delta(sessionID, cursor string) (*Delta, error)
+	Stats(sessionID string) (*Stats, error)
 	// Fingerprint is a cheap change detector (file stats only, no DB reads).
 	Fingerprint() string
 	// Status reports degraded state: stale = recent writes not visible.

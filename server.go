@@ -37,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/", http.FileServerFS(sub))
 	mux.HandleFunc("/api/projects", s.handleProjects)
 	mux.HandleFunc("/api/session", s.handleSession)
+	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/events", s.handleEvents)
 	return localOnly(mux)
 }
@@ -112,6 +113,21 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.SliceStable(projects, func(i, j int) bool { return projects[i].MTime > projects[j].MTime })
 	writeJSON(w, map[string]any{"sources": srcs, "projects": projects})
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	src := s.byLabel[q.Get("src")]
+	if src == nil || q.Get("id") == "" {
+		http.Error(w, "bad src/id", http.StatusBadRequest)
+		return
+	}
+	st, err := src.B.Stats(q.Get("id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, st)
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {

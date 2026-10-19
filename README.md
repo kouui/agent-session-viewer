@@ -39,6 +39,13 @@ Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second 
   see the WAL; run the Windows build instead (hence no `/mnt/c` auto-detect).
 - opencode session `mtime` = max(session.time_updated, newest message time_created).
 
+## Session header stats
+model (first → latest), total in (= new + cache read + cache write), cache read, cache write, out,
+cache hit rate (cache read / total in), context length (prompt size of the latest request, plus
+window and % when the agent records it), price. Backends fill `Stats` in `model.go`.
+- opencode: session-row totals + recorded cost; context window is not recorded (shown without %).
+- codex: latest cumulative `token_count` + `model_context_window`; price is not recorded (`n/a`).
+
 ## TODO
 - Claude Code support (a new `Backend` for `~/.claude/projects/**/*.jsonl`).
 - Clicking a subagent call jumps to (opens) that subagent session in another tab.

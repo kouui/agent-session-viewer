@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +39,10 @@ type cxFile struct {
 	title    string
 	created  int64
 	userEvt  bool // session records user input as event_msg (else as response_item)
+
+	// incremental stats scan state
+	statOff int64
+	stats   Stats
 }
 
 func NewCodex(root string) *Codex {
@@ -255,6 +260,79 @@ func (c *Codex) Sessions() ([]Session, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// Stats scans only the new tail of the rollout since the previous call.
+// Token totals come from the latest cumulative token_count event.
+func (c *Codex) Stats(id string) (*Stats, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.scan()
+	f := c.files[c.byID[id]]
+	if f == nil {
+		return nil, fmt.Errorf("unknown codex session %q", id)
+	}
+	fh, err := os.Open(f.path)
+	if err != nil {
+		return nil, err
+	}
+	defer fh.Close()
+	if st, err := fh.Stat(); err == nil && st.Size() < f.statOff {
+		f.statOff, f.stats = 0, Stats{} // replaced/truncated
+	}
+	if _, err := fh.Seek(f.statOff, io.SeekStart); err != nil {
+		return nil, err
+	}
+	r := bufio.NewReaderSize(fh, 256<<10)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil || len(line) == 0 || line[len(line)-1] != '\n' {
+			break // EOF or partial line
+		}
+		f.statOff += int64(len(line))
+		switch {
+		case bytes.Contains(line, []byte(`"token_count"`)):
+			var l struct {
+				Payload struct {
+					Type string `json:"type"`
+					Info *struct {
+						Total struct {
+							Input      int64 `json:"input_tokens"`
+							Cached     int64 `json:"cached_input_tokens"`
+							CacheWrite int64 `json:"cache_write_input_tokens"`
+							Output     int64 `json:"output_tokens"`
+							Reasoning  int64 `json:"reasoning_output_tokens"`
+						} `json:"total_token_usage"`
+						Last struct {
+							Input int64 `json:"input_tokens"`
+						} `json:"last_token_usage"`
+						Window int64 `json:"model_context_window"`
+					} `json:"info"`
+				} `json:"payload"`
+			}
+			if json.Unmarshal(line, &l) == nil && l.Payload.Type == "token_count" && l.Payload.Info != nil {
+				t := l.Payload.Info.Total
+				f.stats.ContextUsed, f.stats.ContextWindow = l.Payload.Info.Last.Input, l.Payload.Info.Window
+				f.stats.Usage = Usage{Input: max(0, t.Input-t.Cached-t.CacheWrite), CacheRead: t.Cached,
+					CacheWrite: t.CacheWrite, Output: t.Output, Reasoning: t.Reasoning}
+			}
+		case bytes.Contains(line, []byte(`"turn_context"`)):
+			var l struct {
+				Type    string `json:"type"`
+				Payload struct {
+					Model string `json:"model"`
+				} `json:"payload"`
+			}
+			if json.Unmarshal(line, &l) == nil && l.Type == "turn_context" && l.Payload.Model != "" {
+				if f.stats.FirstModel == "" {
+					f.stats.FirstModel = l.Payload.Model
+				}
+				f.stats.LastModel = l.Payload.Model
+			}
+		}
+	}
+	out := f.stats // Cost stays nil: codex does not record price
+	return &out, nil
 }
 
 const cxChunk = 8 << 20 // max bytes of rollout parsed per Delta call

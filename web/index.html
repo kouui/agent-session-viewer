@@ -77,6 +77,9 @@ button.on { background:var(--sel); border-color:var(--userline); }
 .view[hidden] { display:none; }
 .vh { padding:6px 12px; border-bottom:1px solid var(--line); background:var(--panel); flex:none; }
 .vh .title { font-weight:600; }
+.vh .stats { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:3px; font-size:.8rem; }
+.vh .chip { white-space:nowrap; }
+.vh .chip .k { color:var(--dim); }
 .vh .meta { color:var(--dim); font-size:0.7857rem; font-family:var(--mono); word-break:break-all; }
 .msgs { overflow:auto; flex:1; padding:12px; }
 .empty { color:var(--dim); padding:40px; text-align:center; }
@@ -252,7 +255,8 @@ class View {
     this.src = src; this.id = id; this.cursor = ""; this.msgEls = new Map(); this.partEls = new Map(); this.partData = new Map();
     this.syncing = false; this.again = false; this.dirty = true; this.visible = false;
     this.title = h("div", { class: "title" }); this.meta = h("div", { class: "meta" });
-    this.vh = h("div", { class: "vh" }, this.title, this.meta);
+    this.statsEl = h("div", { class: "stats" });
+    this.vh = h("div", { class: "vh" }, this.title, this.meta, this.statsEl);
     this.msgs = h("div", { class: "msgs" });
     this.el = h("div", { class: "view", hidden: true }, this.vh, this.msgs);
     this.first = true;
@@ -265,9 +269,37 @@ class View {
     const { p, s } = f;
     this.title.textContent = s.title || "(untitled)";
     let m = `${s.kind} · ${p.name} · ${s.directory || p.path} · created ${fmtAbs(s.timeCreated)} · updated ${fmtAbs(s.mtime)}`;
-    if (s.tokensIn || s.tokensOut) m += ` · tok in ${fmtTok(s.tokensIn)} / out ${fmtTok(s.tokensOut)}`;
-    if (s.cost) m += ` · $${s.cost.toFixed(4)}`;
     this.meta.textContent = m;
+    this.renderStats();
+  }
+  async loadStats() {
+    if (this.statsBusy) { this.statsAgain = true; return; }
+    this.statsBusy = true;
+    try {
+      const r = await fetch(`/api/stats?src=${encodeURIComponent(this.src)}&id=${encodeURIComponent(this.id)}`);
+      if (r.ok) { this.stats = await r.json(); this.renderStats(); }
+    } catch {} finally {
+      this.statsBusy = false;
+      if (this.statsAgain) { this.statsAgain = false; this.loadStats(); }
+    }
+  }
+  renderStats() {
+    const st = this.stats;
+    if (!st) { this.statsEl.replaceChildren(); return; }
+    const u = st.usage || {}, input = (u.input || 0) + (u.cacheRead || 0) + (u.cacheWrite || 0);
+    const chip = (k, v, tip) => h("span", { class: "chip", title: tip || "" }, h("span", { class: "k" }, k), " ", v);
+    const models = st.firstModel && st.lastModel && st.firstModel !== st.lastModel ? `${st.firstModel} → ${st.lastModel}` : (st.lastModel || st.firstModel || "?");
+    const chips = [
+      chip("model", models, "first → latest model in this session"),
+      chip("in", fmtTok(input), "total input = new + cache read + cache write"),
+      chip("cache read", fmtTok(u.cacheRead)),
+      chip("cache write", fmtTok(u.cacheWrite)),
+      chip("out", fmtTok(u.output), u.reasoning ? `includes/plus reasoning ${u.reasoning}` : ""),
+      chip("hit", input ? (100 * (u.cacheRead || 0) / input).toFixed(1) + "%" : "–", "cache read / total input"),
+    ];
+    if (st.contextUsed) chips.push(chip("ctx", fmtTok(st.contextUsed) + (st.contextWindow ? ` / ${fmtTok(st.contextWindow)} (${(100 * st.contextUsed / st.contextWindow).toFixed(0)}%)` : ""), "prompt size of the latest request / context window"));
+    chips.push(chip("price", st.cost == null ? "n/a" : "$" + st.cost.toFixed(4), st.cost == null ? "this agent does not record price" : ""));
+    this.statsEl.replaceChildren(...chips);
   }
   setVisible(v) {
     this.visible = v; this.el.hidden = !v;
@@ -289,6 +321,7 @@ class View {
         this.first = false;
         if (!d.more) break;
       }
+      this.loadStats();
     } catch (e) {
       this.msgs.replaceChildren(h("div", { class: "empty" }, "Failed to load: " + e.message));
     } finally {

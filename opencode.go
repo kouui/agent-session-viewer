@@ -106,7 +106,7 @@ func (o *OpenCode) Sessions() ([]Session, error) {
 SELECT s.id, s.project_id, COALESCE(p.worktree,''), COALESCE(p.name,''),
        COALESCE(s.parent_id,''), s.title, s.directory, s.time_created, s.time_updated,
        COALESCE((SELECT MAX(m.time_created) FROM message m WHERE m.session_id = s.id), 0),
-       s.cost, s.tokens_input, s.tokens_output, COALESCE(s.time_archived, 0)
+       COALESCE(s.time_archived, 0)
 FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 	if err != nil {
 		o.setErr(err)
@@ -119,7 +119,7 @@ FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 		var pid, worktree, pname string
 		var upd, lastMsg, arch int64
 		if err := rows.Scan(&x.ID, &pid, &worktree, &pname, &x.ParentID, &x.Title,
-			&x.Directory, &x.TimeCreated, &upd, &lastMsg, &x.Cost, &x.TokensIn, &x.TokensOut, &arch); err != nil {
+			&x.Directory, &x.TimeCreated, &upd, &lastMsg, &arch); err != nil {
 			return nil, err
 		}
 		x.Kind = "opencode"
@@ -139,6 +139,53 @@ FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 		out = append(out, x)
 	}
 	return out, rows.Err()
+}
+
+// Stats reads session-level aggregates (opencode keeps them on the session row)
+// and the first/latest model seen in the messages.
+func (o *OpenCode) Stats(id string) (*Stats, error) {
+	db, err := o.handle()
+	if err != nil {
+		return nil, err
+	}
+	var cost float64
+	st := &Stats{}
+	var reasoning int64
+	err = db.QueryRow(`SELECT cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write
+FROM session WHERE id = ?`, id).Scan(&cost, &st.Usage.Input, &st.Usage.Output, &reasoning, &st.Usage.CacheRead, &st.Usage.CacheWrite)
+	if err != nil {
+		o.setErr(err)
+		return nil, err
+	}
+	st.Usage.Reasoning = reasoning
+	st.Cost = &cost
+	const model = `COALESCE(json_extract(data,'$.modelID'), json_extract(data,'$.model.modelID'))`
+	for _, q := range []struct {
+		dst   *string
+		order string
+	}{{&st.FirstModel, "ASC"}, {&st.LastModel, "DESC"}} {
+		db.QueryRow(`SELECT `+model+` FROM message WHERE session_id = ? AND `+model+` IS NOT NULL
+ORDER BY time_created `+q.order+` LIMIT 1`, id).Scan(q.dst)
+	}
+	// context length = prompt size (new + cached input) of the latest model call
+	var last string
+	if db.QueryRow(`SELECT data FROM message WHERE session_id = ?
+AND json_extract(data,'$.role') = 'assistant' AND COALESCE(json_extract(data,'$.tokens.input'),0) + COALESCE(json_extract(data,'$.tokens.cache.read'),0) > 0
+ORDER BY time_created DESC LIMIT 1`, id).Scan(&last) == nil {
+		var m struct {
+			Tokens struct {
+				Input int64 `json:"input"`
+				Cache struct {
+					Read  int64 `json:"read"`
+					Write int64 `json:"write"`
+				} `json:"cache"`
+			} `json:"tokens"`
+		}
+		if json.Unmarshal([]byte(last), &m) == nil {
+			st.ContextUsed = m.Tokens.Input + m.Tokens.Cache.Read + m.Tokens.Cache.Write
+		}
+	}
+	return st, nil
 }
 
 // ---- conversion: opencode rows -> normalized contract -----------------------
