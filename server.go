@@ -39,6 +39,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/session", s.handleSession)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/usage", s.handleUsage)
+	mux.HandleFunc("/api/feed", s.handleFeed)
 	mux.HandleFunc("/api/events", s.handleEvents)
 	return localOnly(mux)
 }

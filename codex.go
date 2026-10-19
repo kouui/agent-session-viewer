@@ -533,3 +533,59 @@ func codexTurnOpen(f *cxFile) bool {
 	f.open = start >= 0 && start > end
 	return f.open
 }
+
+const cxTail = 1 << 20 // bytes read from the end of a rollout by Recent
+
+// Recent parses the tail of the rollout file; each JSONL item becomes its own message.
+func (c *Codex) Recent(id string, limit int) ([]Message, error) {
+	c.mu.Lock()
+	c.scan()
+	path := c.byID[id]
+	userEvt := c.files[path] != nil && c.files[path].userEvt
+	c.mu.Unlock()
+	if path == "" {
+		return nil, fmt.Errorf("unknown codex session %q", id)
+	}
+	fh, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer fh.Close()
+	st, err := fh.Stat()
+	if err != nil {
+		return nil, err
+	}
+	off := max(0, st.Size()-cxTail)
+	if _, err := fh.Seek(off, io.SeekStart); err != nil {
+		return nil, err
+	}
+	r := bufio.NewReaderSize(fh, 256<<10)
+	read := int64(0)
+	if off > 0 { // drop the partial first line
+		line, err := r.ReadBytes('\n')
+		if err != nil {
+			return []Message{}, nil
+		}
+		read += int64(len(line))
+	}
+	d := &Delta{Messages: []Message{}}
+	calls := map[string][2]int{}
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil || len(line) == 0 || line[len(line)-1] != '\n' {
+			break
+		}
+		convertCodexLine(d, calls, off+read, line, userEvt)
+		read += int64(len(line))
+	}
+	msgs := d.Messages[:0]
+	for _, m := range d.Messages {
+		if m.Role != "" {
+			msgs = append(msgs, m)
+		}
+	}
+	if len(msgs) > limit {
+		msgs = msgs[len(msgs)-limit:]
+	}
+	return msgs, nil
+}

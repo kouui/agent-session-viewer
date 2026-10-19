@@ -120,6 +120,8 @@ type Backend interface {
 	Path() string
 	Sessions() ([]Session, error)
 	Delta(sessionID, cursor string) (*Delta, error)
+	// Recent returns roughly the newest `limit` messages (with parts), oldest first. Cheap tail read for the bar.
+	Recent(sessionID string, limit int) ([]Message, error)
 	Stats(sessionID string) (*Stats, error)
 	// Usage returns all-time hourly usage rows; backends cache and update incrementally.
 	Usage() ([]UsageRow, error)

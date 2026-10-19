@@ -16,7 +16,7 @@ const Stats = (() => {
   };
 
   let mode = null, root = null, data = null, busy = false, last = 0, tRefresh = null, tRotate = null, hover = false;
-  let ctxStat = null, ctxKey = "";
+  let ctxStat = null, ctxKey = "", topEl = null;
 
   /* ---------- data ---------- */
   async function load(force) {
@@ -24,7 +24,7 @@ const Stats = (() => {
     busy = true;
     try {
       const [u, p] = await Promise.all([fetch("/api/usage").then(r => r.json()), fetch("/api/projects").then(r => r.json())]);
-      data = { rows: u.rows, sessions: p.projects.flatMap(pr => pr.sessions.map(s => ({ ...s, project: pr.name }))) };
+      data = { rows: u.rows, sessions: p.projects.flatMap(pr => pr.sessions.map(s => ({ ...s, project: pr.name, projectKey: pr.key, projectMTime: pr.mtime }))) };
       const cur = pickCurrent();
       const key = cur ? cur.source + cur.id + cur.mtime : "";
       if (cur && key !== ctxKey) {
@@ -33,6 +33,7 @@ const Stats = (() => {
       }
     } catch {}
     busy = false; last = Date.now(); draw();
+    if (mode === "bar" && data && typeof Bar !== "undefined") Bar.update(data.sessions, cfg);
   }
   // the session the context page watches: a running one, else the most recently touched
   function pickCurrent() {
@@ -128,9 +129,11 @@ const Stats = (() => {
       modeBtn("▭", "full window", "full"), native ? h("button", { title: "quit", onclick: () => window.avQuit() }, "✕") : null);
     const body = h("div", { class: "spage", onmouseenter: () => hover = true, onmouseleave: () => hover = false },
       h("div", { class: "ttl" }, page.name), ...(data ? page.render() : [h("div", { class: "dimt" }, "loading…")]));
-    const kids = [head, body];
-    if (mode === "bar") kids.push(h("div", { class: "barstub" }, "Projects and live message feed: coming in the next step."));
-    root.replaceChildren(...kids.filter(Boolean));
+    if (mode === "bar") { // the bar host below keeps its own scroll position and animations
+      if (!topEl) topEl = h("div", { class: "bartop" });
+      topEl.replaceChildren(head, body);
+      if (root.firstChild !== topEl) root.replaceChildren(topEl, Bar.el);
+    } else root.replaceChildren(head, body);
   }
   function go(d) { cfg.page = (cfg.page + d + PAGES.length) % PAGES.length; save(); draw(); }
   function schedule() {
@@ -140,11 +143,11 @@ const Stats = (() => {
 
   return {
     show(m) {
-      mode = m; root = $(m === "bar" ? "#barview" : "#miniview");
+      mode = m; topEl = null; root = $(m === "bar" ? "#barview" : "#miniview");
       draw(); load(true); schedule();
       clearInterval(tRefresh); tRefresh = setInterval(() => load(true), 30000);
     },
-    hide() { clearInterval(tRefresh); clearInterval(tRotate); root = null; mode = null; },
+    hide() { clearInterval(tRefresh); clearInterval(tRotate); root = null; mode = null; topEl = null; },
     onChange() { if (root) load(false); },
     setPage(i) { cfg.page = i; draw(); },
   };

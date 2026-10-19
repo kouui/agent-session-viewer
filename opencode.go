@@ -437,3 +437,57 @@ func contextWindow(provider, model string) int64 {
 	}
 	return mcData[provider][model]
 }
+
+// Recent returns the newest `limit` messages with their parts, oldest first.
+func (o *OpenCode) Recent(id string, limit int) ([]Message, error) {
+	db, err := o.handle()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT ?`, id, limit)
+	if err != nil {
+		o.setErr(err)
+		return nil, err
+	}
+	var msgs []Message
+	for rows.Next() {
+		var mid, data string
+		var created int64
+		if err := rows.Scan(&mid, &created, &data); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		msgs = append(msgs, convertOCMessage(mid, created, data))
+	}
+	rows.Close()
+	if len(msgs) == 0 {
+		return []Message{}, nil
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	idx := make(map[string]int, len(msgs))
+	args := make([]any, 0, len(msgs))
+	marks := make([]string, 0, len(msgs))
+	for i, m := range msgs {
+		idx[m.ID] = i
+		args = append(args, m.ID)
+		marks = append(marks, "?")
+	}
+	prows, err := db.Query(`SELECT id, message_id, data FROM part WHERE message_id IN (`+strings.Join(marks, ",")+`) ORDER BY id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer prows.Close()
+	for prows.Next() {
+		var pid, mid, data string
+		if err := prows.Scan(&pid, &mid, &data); err != nil {
+			return nil, err
+		}
+		if part, ok := convertOCPart(pid, mid, data); ok {
+			i := idx[mid]
+			msgs[i].Parts = append(msgs[i].Parts, part)
+		}
+	}
+	return msgs, prows.Err()
+}
