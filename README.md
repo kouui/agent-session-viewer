@@ -38,3 +38,7 @@ Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second 
 - Opening a Windows-side opencode DB from WSL (`/mnt/c`) falls back to `immutable` mode, which can't
   see the WAL; run the Windows build instead (hence no `/mnt/c` auto-detect).
 - opencode session `mtime` = max(session.time_updated, newest message time_created).
+
+## TODO
+- Claude Code support (a new `Backend` for `~/.claude/projects/**/*.jsonl`).
+- Clicking a subagent call jumps to (opens) that subagent session in another tab.
