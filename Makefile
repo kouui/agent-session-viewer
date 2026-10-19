@@ -1,12 +1,12 @@
 GO ?= go
 
-.PHONY: build windows all run clean
-build:
-	$(GO) build -o agent-viewer .
+.PHONY: all linux windows run clean
+all: linux windows
+linux:
+	GOOS=linux GOARCH=amd64 $(GO) build -o dist/agent-viewer-linux .
 windows:
-	GOOS=windows GOARCH=amd64 $(GO) build -o dist/agent-viewer.exe .
-all: build windows
-run: build
-	./agent-viewer
+	GOOS=windows GOARCH=amd64 $(GO) build -o dist/agent-viewer-windows.exe .
+run: linux
+	./dist/agent-viewer-linux
 clean:
-	rm -rf agent-viewer dist
+	rm -rf dist agent-viewer

@@ -7,9 +7,10 @@ panes / tabs.
 Supported: **opencode** (`opencode.db`, SQLite) and **codex** (`~/.codex/sessions/**/rollout-*.jsonl`).
 
 ```
-make build      # ./agent-viewer          (Linux / WSL)
-make windows    # dist/agent-viewer.exe   (Windows)
-./agent-viewer  # http://127.0.0.1:9191
+make linux      # dist/agent-viewer-linux        (Linux / WSL)
+make windows    # dist/agent-viewer-windows.exe  (Windows)
+make all        # both
+./dist/agent-viewer-linux  # http://127.0.0.1:9191
 ```
 
 ## Detection
