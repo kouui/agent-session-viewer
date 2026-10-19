@@ -1,6 +1,7 @@
-package main
+package opencode
 
 import (
+	"agent-viewer/internal/model"
 	"database/sql"
 	"encoding/json"
 	"net/url"
@@ -26,7 +27,7 @@ type OpenCode struct {
 	usage ocUsageCache
 }
 
-func NewOpenCode(dbPath string) *OpenCode { return &OpenCode{dbPath: dbPath} }
+func New(dbPath string) *OpenCode { return &OpenCode{dbPath: dbPath} }
 
 func (o *OpenCode) Kind() string { return "opencode" }
 func (o *OpenCode) Path() string { return o.dbPath }
@@ -100,7 +101,7 @@ func (o *OpenCode) Fingerprint() string {
 	return b.String()
 }
 
-func (o *OpenCode) Sessions() ([]Session, error) {
+func (o *OpenCode) Sessions() ([]model.Session, error) {
 	db, err := o.handle()
 	if err != nil {
 		return nil, err
@@ -120,9 +121,9 @@ FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Session
+	var out []model.Session
 	for rows.Next() {
-		var x Session
+		var x model.Session
 		var pid, worktree, pname string
 		var upd, lastMsg, arch, open int64
 		if err := rows.Scan(&x.ID, &pid, &worktree, &pname, &x.ParentID, &x.Title,
@@ -132,17 +133,17 @@ FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 		x.Kind = "opencode"
 		x.MTime = max(upd, lastMsg)
 		x.Archived = arch != 0
-		x.Running = open != 0 && time.Since(time.UnixMilli(x.MTime)) < runningWindow
+		x.Running = open != 0 && time.Since(time.UnixMilli(x.MTime)) < model.RunningWindow
 		path := worktree
 		if pid == "global" || path == "" || path == "/" {
 			path = x.Directory
 			pname = ""
 		}
 		x.ProjectPath = path
-		x.ProjectKey = normPath(path)
+		x.ProjectKey = model.NormPath(path)
 		x.ProjectName = pname
 		if x.ProjectName == "" {
-			x.ProjectName = baseName(path)
+			x.ProjectName = model.BaseName(path)
 		}
 		out = append(out, x)
 	}
@@ -151,13 +152,13 @@ FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 
 // Stats reads session-level aggregates (opencode keeps them on the session row)
 // and the first/latest model seen in the messages.
-func (o *OpenCode) Stats(id string) (*Stats, error) {
+func (o *OpenCode) Stats(id string) (*model.Stats, error) {
 	db, err := o.handle()
 	if err != nil {
 		return nil, err
 	}
 	var cost float64
-	st := &Stats{}
+	st := &model.Stats{}
 	var reasoning int64
 	err = db.QueryRow(`SELECT cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write
 FROM session WHERE id = ?`, id).Scan(&cost, &st.Usage.Input, &st.Usage.Output, &reasoning, &st.Usage.CacheRead, &st.Usage.CacheWrite)
@@ -260,8 +261,8 @@ type ocPart struct {
 	} `json:"state"`
 }
 
-func convertOCMessage(id string, created int64, data string) Message {
-	m := Message{ID: id, Time: created}
+func convertOCMessage(id string, created int64, data string) model.Message {
+	m := model.Message{ID: id, Time: created}
 	var x ocMessage
 	if json.Unmarshal([]byte(data), &x) != nil {
 		m.Role = "assistant"
@@ -279,20 +280,20 @@ func convertOCMessage(id string, created int64, data string) Message {
 }
 
 // convertOCPart returns ok=false for parts that carry no display value.
-func convertOCPart(id, messageID, data string) (Part, bool) {
-	p := Part{ID: id, MessageID: messageID}
+func convertOCPart(id, messageID, data string) (model.Part, bool) {
+	p := model.Part{ID: id, MessageID: messageID}
 	var x ocPart
 	if json.Unmarshal([]byte(data), &x) != nil {
-		p.Kind, p.Raw = KindOther, rawString(data)
+		p.Kind, p.Raw = model.KindOther, model.RawString(data)
 		return p, true
 	}
 	switch x.Type {
 	case "text":
-		p.Kind, p.Text = KindText, x.Text
+		p.Kind, p.Text = model.KindText, x.Text
 	case "reasoning":
-		p.Kind, p.Text = KindReasoning, x.Text
+		p.Kind, p.Text = model.KindReasoning, x.Text
 	case "tool":
-		p.Kind, p.Tool = KindTool, x.Tool
+		p.Kind, p.Tool = model.KindTool, x.Tool
 		if s := x.State; s != nil {
 			p.Status, p.Title, p.Input, p.Error = s.Status, s.Title, s.Input, s.Error
 			if len(s.Output) > 0 {
@@ -308,16 +309,16 @@ func convertOCPart(id, messageID, data string) (Part, bool) {
 			}
 		}
 	case "patch":
-		p.Kind, p.Files = KindPatch, x.Files
+		p.Kind, p.Files = model.KindPatch, x.Files
 	case "step-start":
 		return p, false
 	case "step-finish":
-		p.Kind, p.Text, p.Cost = KindStep, x.Reason, x.Cost
+		p.Kind, p.Text, p.Cost = model.KindStep, x.Reason, x.Cost
 		if t := x.Tokens; t != nil {
-			p.Usage = &Usage{Input: t.Input, Output: t.Output, Reasoning: t.Reasoning, CacheRead: t.Cache.Read, CacheWrite: t.Cache.Write}
+			p.Usage = &model.Usage{Input: t.Input, Output: t.Output, Reasoning: t.Reasoning, CacheRead: t.Cache.Read, CacheWrite: t.Cache.Write}
 		}
 	default:
-		p.Kind, p.Raw = KindOther, rawOrString(data)
+		p.Kind, p.Raw = model.KindOther, model.RawOrString(data)
 		p.Tool = x.Type
 	}
 	return p, true
@@ -325,14 +326,14 @@ func convertOCPart(id, messageID, data string) (Part, bool) {
 
 // Delta returns messages/parts updated at or after the cursor (a unix ms
 // timestamp). Re-sent rows are harmless: the client upserts by id.
-func (o *OpenCode) Delta(id, cursor string) (*Delta, error) {
+func (o *OpenCode) Delta(id, cursor string) (*model.Delta, error) {
 	db, err := o.handle()
 	if err != nil {
 		return nil, err
 	}
 	since, _ := strconv.ParseInt(cursor, 10, 64)
 	cur := since
-	d := &Delta{Messages: []Message{}}
+	d := &model.Delta{Messages: []model.Message{}}
 	idx := map[string]int{}
 
 	rows, err := db.Query(`SELECT id, time_created, time_updated, data FROM message
@@ -375,7 +376,7 @@ WHERE session_id = ? AND time_updated >= ? ORDER BY id`, id, since)
 		if !seen { // parts-only update for an already-sent message
 			i = len(d.Messages)
 			idx[mid] = i
-			d.Messages = append(d.Messages, Message{ID: mid})
+			d.Messages = append(d.Messages, model.Message{ID: mid})
 		}
 		d.Messages[i].Parts = append(d.Messages[i].Parts, part)
 	}
@@ -439,7 +440,7 @@ func contextWindow(provider, model string) int64 {
 }
 
 // Recent returns the newest `limit` messages with their parts, oldest first.
-func (o *OpenCode) Recent(id string, limit int) ([]Message, error) {
+func (o *OpenCode) Recent(id string, limit int) ([]model.Message, error) {
 	db, err := o.handle()
 	if err != nil {
 		return nil, err
@@ -449,7 +450,7 @@ func (o *OpenCode) Recent(id string, limit int) ([]Message, error) {
 		o.setErr(err)
 		return nil, err
 	}
-	var msgs []Message
+	var msgs []model.Message
 	for rows.Next() {
 		var mid, data string
 		var created int64
@@ -461,7 +462,7 @@ func (o *OpenCode) Recent(id string, limit int) ([]Message, error) {
 	}
 	rows.Close()
 	if len(msgs) == 0 {
-		return []Message{}, nil
+		return []model.Message{}, nil
 	}
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 		msgs[i], msgs[j] = msgs[j], msgs[i]

@@ -1,6 +1,7 @@
-package main
+package codex
 
 import (
+	"agent-viewer/internal/model"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -24,7 +25,7 @@ type cxUsageState struct {
 	off     int64
 	prev    cxTotals
 	model   string
-	buckets map[cxUsageKey]*Usage
+	buckets map[cxUsageKey]*model.Usage
 }
 
 type cxUsageCache struct {
@@ -32,7 +33,7 @@ type cxUsageCache struct {
 	state map[string]*cxUsageState // by file path
 }
 
-func (c *Codex) Usage() ([]UsageRow, error) {
+func (c *Codex) Usage() ([]model.UsageRow, error) {
 	// snapshot the file index, then parse under a separate lock so the (slow)
 	// first scan does not block session listing
 	c.mu.Lock()
@@ -50,16 +51,16 @@ func (c *Codex) Usage() ([]UsageRow, error) {
 	if uc.state == nil {
 		uc.state = map[string]*cxUsageState{}
 	}
-	var out []UsageRow
+	var out []model.UsageRow
 	for _, ref := range refs {
 		st := uc.state[ref.path]
 		if st == nil {
-			st = &cxUsageState{buckets: map[cxUsageKey]*Usage{}}
+			st = &cxUsageState{buckets: map[cxUsageKey]*model.Usage{}}
 			uc.state[ref.path] = st
 		}
 		cxUsageScan(ref.path, st)
 		for k, u := range st.buckets {
-			out = append(out, UsageRow{Session: ref.id, Model: k.model, Hour: k.hour, Usage: *u})
+			out = append(out, model.UsageRow{Session: ref.id, Model: k.model, Hour: k.hour, Usage: *u})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Hour < out[j].Hour })
@@ -74,7 +75,7 @@ func cxUsageScan(path string, st *cxUsageState) {
 	defer fh.Close()
 	if fi, err := fh.Stat(); err == nil {
 		if fi.Size() < st.off { // replaced/truncated: start over
-			*st = cxUsageState{buckets: map[cxUsageKey]*Usage{}}
+			*st = cxUsageState{buckets: map[cxUsageKey]*model.Usage{}}
 		} else if fi.Size() == st.off {
 			return
 		}
@@ -98,13 +99,13 @@ func cxUsageScan(path string, st *cxUsageState) {
 			d := tc.Total.sub(st.prev)
 			st.prev = tc.Total
 			u := d.usage()
-			if u == (Usage{}) {
+			if u == (model.Usage{}) {
 				continue
 			}
 			k := cxUsageKey{tc.Time / 3600000 * 3600000, st.model}
 			b := st.buckets[k]
 			if b == nil {
-				b = &Usage{}
+				b = &model.Usage{}
 				st.buckets[k] = b
 			}
 			b.Input += u.Input

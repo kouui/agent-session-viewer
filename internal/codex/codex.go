@@ -1,6 +1,7 @@
-package main
+package codex
 
 import (
+	"agent-viewer/internal/model"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -46,10 +47,10 @@ type cxFile struct {
 	openSize  int64
 	openMTime time.Time
 	open      bool // newest turn not completed (cached for openSize/openMTime)
-	stats     Stats
+	stats     model.Stats
 }
 
-func NewCodex(root string) *Codex {
+func New(root string) *Codex {
 	return &Codex{root: root, files: map[string]*cxFile{}, byID: map[string]string{}, roots: map[string]string{}}
 }
 
@@ -234,16 +235,16 @@ func (c *Codex) projectRoot(cwd string) string {
 	if r, ok := c.roots[cwd]; ok {
 		return r
 	}
-	r := gitRoot(cwd)
+	r := model.GitRoot(cwd)
 	c.roots[cwd] = r
 	return r
 }
 
-func (c *Codex) Sessions() ([]Session, error) {
+func (c *Codex) Sessions() ([]model.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.scan()
-	out := make([]Session, 0, len(c.files))
+	out := make([]model.Session, 0, len(c.files))
 	for _, f := range c.files {
 		path := f.cwd
 		if path != "" {
@@ -253,11 +254,11 @@ func (c *Codex) Sessions() ([]Session, error) {
 		if title == "" {
 			title = "(no user message)"
 		}
-		s := Session{
+		s := model.Session{
 			Kind: "codex", ID: f.id, Title: title, Directory: f.cwd,
 			TimeCreated: f.created, MTime: f.mtime.UnixMilli(), Archived: f.archived,
-			Running:     time.Since(f.mtime) < runningWindow && codexTurnOpen(f),
-			ProjectPath: path, ProjectKey: normPath(path), ProjectName: baseName(path),
+			Running:     time.Since(f.mtime) < model.RunningWindow && codexTurnOpen(f),
+			ProjectPath: path, ProjectKey: model.NormPath(path), ProjectName: model.BaseName(path),
 		}
 		if path == "" {
 			s.ProjectKey, s.ProjectName = "(unknown)", "(unknown)"
@@ -269,7 +270,7 @@ func (c *Codex) Sessions() ([]Session, error) {
 
 // Stats scans only the new tail of the rollout since the previous call.
 // Token totals come from the latest cumulative token_count event.
-func (c *Codex) Stats(id string) (*Stats, error) {
+func (c *Codex) Stats(id string) (*model.Stats, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.scan()
@@ -283,7 +284,7 @@ func (c *Codex) Stats(id string) (*Stats, error) {
 	}
 	defer fh.Close()
 	if st, err := fh.Stat(); err == nil && st.Size() < f.statOff {
-		f.statOff, f.stats = 0, Stats{} // replaced/truncated
+		f.statOff, f.stats = 0, model.Stats{} // replaced/truncated
 	}
 	if _, err := fh.Seek(f.statOff, io.SeekStart); err != nil {
 		return nil, err
@@ -322,7 +323,7 @@ func (c *Codex) Stats(id string) (*Stats, error) {
 
 const cxChunk = 8 << 20 // max bytes of rollout parsed per Delta call
 
-func (c *Codex) Delta(id, cursor string) (*Delta, error) {
+func (c *Codex) Delta(id, cursor string) (*model.Delta, error) {
 	c.mu.Lock()
 	c.scan()
 	path := c.byID[id]
@@ -337,7 +338,7 @@ func (c *Codex) Delta(id, cursor string) (*Delta, error) {
 		return nil, err
 	}
 	defer fh.Close()
-	d := &Delta{Messages: []Message{}}
+	d := &model.Delta{Messages: []model.Message{}}
 	if st, err := fh.Stat(); err == nil && off > st.Size() {
 		off, d.Reset = 0, true // file was replaced/truncated
 	}
@@ -363,7 +364,7 @@ func (c *Codex) Delta(id, cursor string) (*Delta, error) {
 	return d, nil
 }
 
-func convertCodexLine(d *Delta, calls map[string][2]int, off int64, line []byte, userEvt bool) {
+func convertCodexLine(d *model.Delta, calls map[string][2]int, off int64, line []byte, userEvt bool) {
 	var l cxLine
 	var p cxPayload
 	if json.Unmarshal(line, &l) != nil || json.Unmarshal(l.Payload, &p) != nil {
@@ -371,21 +372,21 @@ func convertCodexLine(d *Delta, calls map[string][2]int, off int64, line []byte,
 	}
 	ts := parseTS(l.Timestamp)
 	mid := fmt.Sprintf("L%012d", off)
-	add := func(role string, part Part) {
+	add := func(role string, part model.Part) {
 		part.MessageID = mid
-		d.Messages = append(d.Messages, Message{ID: mid, Role: role, Time: ts, Parts: []Part{part}})
+		d.Messages = append(d.Messages, model.Message{ID: mid, Role: role, Time: ts, Parts: []model.Part{part}})
 	}
 	switch l.Type {
 	case "event_msg":
 		if p.Type == "user_message" {
-			add("user", Part{ID: mid + ".0", Kind: KindText, Text: p.Message})
+			add("user", model.Part{ID: mid + ".0", Kind: model.KindText, Text: p.Message})
 		}
 	case "response_item":
 		switch p.Type {
 		case "message":
 			if p.Role == "user" && !userEvt { // exec-mode sessions have no user_message events
 				if t := userText(p); t != "" {
-					add("user", Part{ID: mid + ".0", Kind: KindText, Text: t})
+					add("user", model.Part{ID: mid + ".0", Kind: model.KindText, Text: t})
 				}
 				return
 			}
@@ -397,7 +398,7 @@ func convertCodexLine(d *Delta, calls map[string][2]int, off int64, line []byte,
 				sb.WriteString(c.Text)
 			}
 			if sb.Len() > 0 {
-				add("assistant", Part{ID: mid + ".0", Kind: KindText, Text: sb.String()})
+				add("assistant", model.Part{ID: mid + ".0", Kind: model.KindText, Text: sb.String()})
 			}
 		case "reasoning":
 			var sb strings.Builder
@@ -405,14 +406,14 @@ func convertCodexLine(d *Delta, calls map[string][2]int, off int64, line []byte,
 				sb.WriteString(s.Text + "\n")
 			}
 			if t := strings.TrimSpace(sb.String()); t != "" {
-				add("assistant", Part{ID: mid + ".0", Kind: KindReasoning, Text: t})
+				add("assistant", model.Part{ID: mid + ".0", Kind: model.KindReasoning, Text: t})
 			}
 		case "function_call", "custom_tool_call", "local_shell_call":
 			in := p.Input
 			if p.Type == "function_call" {
 				in = p.Arguments
 			}
-			part := Part{ID: "call:" + p.CallID, Kind: KindTool, Tool: p.Name, Status: "running", Input: rawOrString(in)}
+			part := model.Part{ID: "call:" + p.CallID, Kind: model.KindTool, Tool: p.Name, Status: "running", Input: model.RawOrString(in)}
 			if p.Type == "custom_tool_call" && p.Status == "completed" {
 				part.Status = "running" // output item completes it
 			}
@@ -423,16 +424,16 @@ func convertCodexLine(d *Delta, calls map[string][2]int, off int64, line []byte,
 			calls[p.CallID] = [2]int{len(d.Messages) - 1, 0}
 		case "function_call_output", "custom_tool_call_output":
 			out := codexOutput(p.Output)
-			part := Part{ID: "call:" + p.CallID, Kind: KindTool, Status: "completed", Output: out}
+			part := model.Part{ID: "call:" + p.CallID, Kind: model.KindTool, Status: "completed", Output: out}
 			if ix, ok := calls[p.CallID]; ok { // call is in this delta: merge
 				dst := &d.Messages[ix[0]].Parts[ix[1]]
 				dst.Status, dst.Output = part.Status, part.Output
 				return
 			}
 			// call arrived in an earlier delta: parts-only update, merged client-side
-			d.Messages = append(d.Messages, Message{ID: "orphan", Parts: []Part{part}})
+			d.Messages = append(d.Messages, model.Message{ID: "orphan", Parts: []model.Part{part}})
 		case "web_search_call":
-			part := Part{ID: mid + ".0", Kind: KindTool, Tool: "web_search", Status: "completed", Input: p.Action}
+			part := model.Part{ID: mid + ".0", Kind: model.KindTool, Tool: "web_search", Status: "completed", Input: p.Action}
 			add("assistant", part)
 		}
 	}
@@ -464,8 +465,8 @@ type cxTotals struct {
 	Reasoning  int64 `json:"reasoning_output_tokens"`
 }
 
-func (t cxTotals) usage() Usage {
-	return Usage{Input: max(0, t.Input-t.Cached-t.CacheWrite), CacheRead: t.Cached,
+func (t cxTotals) usage() model.Usage {
+	return model.Usage{Input: max(0, t.Input-t.Cached-t.CacheWrite), CacheRead: t.Cached,
 		CacheWrite: t.CacheWrite, Output: t.Output, Reasoning: t.Reasoning}
 }
 
@@ -507,11 +508,6 @@ func parseTokenCount(line []byte) (cxTokenCount, bool) {
 	return cxTokenCount{Total: i.Total, Last: i.Last.Input, Window: i.Window, Time: parseTS(l.Timestamp)}, true
 }
 
-// runningWindow: an unfinished turn only counts as "running" while the history
-// was touched this recently (a crashed or killed agent leaves turns open forever).
-// Long enough to cover a slow tool call or a main session waiting on subagents.
-const runningWindow = 10 * time.Minute
-
 // codexTurnOpen reports whether the newest turn started but has not completed,
 // by looking at the tail of the rollout. The result is cached per file state.
 func codexTurnOpen(f *cxFile) bool {
@@ -538,7 +534,7 @@ func codexTurnOpen(f *cxFile) bool {
 const cxTail = 1 << 20 // bytes read from the end of a rollout by Recent
 
 // Recent parses the tail of the rollout file; each JSONL item becomes its own message.
-func (c *Codex) Recent(id string, limit int) ([]Message, error) {
+func (c *Codex) Recent(id string, limit int) ([]model.Message, error) {
 	c.mu.Lock()
 	c.scan()
 	path := c.byID[id]
@@ -565,11 +561,11 @@ func (c *Codex) Recent(id string, limit int) ([]Message, error) {
 	if off > 0 { // drop the partial first line
 		line, err := r.ReadBytes('\n')
 		if err != nil {
-			return []Message{}, nil
+			return []model.Message{}, nil
 		}
 		read += int64(len(line))
 	}
-	d := &Delta{Messages: []Message{}}
+	d := &model.Delta{Messages: []model.Message{}}
 	calls := map[string][2]int{}
 	for {
 		line, err := r.ReadBytes('\n')

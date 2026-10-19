@@ -1,6 +1,7 @@
-package main
+package server
 
 import (
+	"agent-viewer/internal/model"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -32,7 +33,7 @@ func snippet(s string, n int) string {
 }
 
 // toolSummary picks the most telling argument of a tool call.
-func toolSummary(p Part) string {
+func toolSummary(p model.Part) string {
 	if p.Title != "" {
 		return snippet(p.Title, 100)
 	}
@@ -72,20 +73,20 @@ func toolSummary(p Part) string {
 }
 
 // buildFeed flattens messages into feed items and keeps the newest n.
-func buildFeed(msgs []Message, n int) []FeedItem {
+func buildFeed(msgs []model.Message, n int) []FeedItem {
 	var items []FeedItem
 	for _, m := range msgs {
 		for _, p := range m.Parts {
 			switch {
-			case p.Kind == KindText && m.Role == "user":
+			case p.Kind == model.KindText && m.Role == "user":
 				if t := snippet(p.Text, feedTextMax); t != "" {
 					items = append(items, FeedItem{ID: p.ID, Kind: "user", Time: m.Time, Text: t})
 				}
-			case p.Kind == KindText:
+			case p.Kind == model.KindText:
 				if t := snippet(p.Text, feedTextMax); t != "" {
 					items = append(items, FeedItem{ID: p.ID, Kind: "text", Time: m.Time, Text: t})
 				}
-			case p.Kind == KindTool:
+			case p.Kind == model.KindTool:
 				items = append(items, FeedItem{ID: p.ID, Kind: "tool", Time: m.Time, Tool: p.Tool, Text: toolSummary(p), Status: p.Status})
 			}
 		}

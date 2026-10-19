@@ -29,10 +29,18 @@ opencode DB is opened with `mode=ro` + `query_only`; codex files are opened read
 read forward. Nothing is ever written.
 
 ## Architecture
-`model.go` defines the normalized contract (`Session`, `Message`, `Part`, `Delta`) and the
-`Backend` interface. `opencode.go` and `codex.go` convert native formats into it; the server and
-frontend only know the contract. Add an agent = one new file implementing `Backend` + a case in
-`detect.go`.
+```
+cmd/agent-viewer/     main: flags, wiring (-ldflags -X main.defaultGUI=1 selects the no-console GUI default)
+internal/model/       the normalized contract (Session, Message, Part, Delta, Stats, UsageRow) + the Backend interface
+internal/opencode/    Backend for opencode.db (SQLite): sessions, deltas, stats, hourly usage, running detection
+internal/codex/       Backend for codex rollout JSONL files (same contract)
+internal/detect/      finds the history on this machine (home dir, XDG, CODEX_HOME, -dir)
+internal/server/      HTTP API (/api/projects, session, stats, usage, feed, SSE events) + static web UI
+internal/gui/         embedded WebView2 window and window modes (Windows; a stub elsewhere)
+web/                  browser UI, embedded into the binary: index.html, css/, js/ (app, cost, stats, bar)
+```
+Backends only produce the contract; the server and the frontend only consume it. Add an agent = one new
+package under `internal/` implementing `model.Backend` + a case in `internal/detect`. `make test` runs vet and tests.
 
 Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second and pushes SSE
 `change` events; the browser then fetches incremental deltas (opaque cursor per view).

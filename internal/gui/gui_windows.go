@@ -1,4 +1,5 @@
-package main
+// Package gui hosts the embedded native window (Windows only, WebView2).
+package gui
 
 import (
 	"encoding/json"
@@ -194,9 +195,13 @@ func (m *winMgr) wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 	return r
 }
 
-// initLogging sends log output to a file when the exe has no console.
-func initLogging() {
-	if defaultGUI != "1" {
+var guiMode bool // the UI runs in the embedded window: fatal errors use a message box
+
+// Init is called once at startup. embedded: the UI will run in the native window.
+// logToFile: the exe has no console, so log output goes to %LOCALAPPDATA%\agent-viewer\agent-viewer.log.
+func Init(embedded, logToFile bool) {
+	guiMode = embedded
+	if !logToFile {
 		return
 	}
 	dir := os.Getenv("LOCALAPPDATA")
@@ -210,8 +215,8 @@ func initLogging() {
 	}
 }
 
-// fatal reports an unrecoverable error: a message box in GUI mode, else stderr.
-func fatal(msg string) {
+// Fatal reports an unrecoverable error: a message box in GUI mode, else stderr.
+func Fatal(msg string) {
 	log.Print(msg)
 	if guiMode {
 		t, _ := windows.UTF16PtrFromString(msg)
@@ -223,9 +228,9 @@ func fatal(msg string) {
 	os.Exit(1)
 }
 
-// runGUI serves the UI on a loopback port and shows it in an embedded
+// Run serves the UI on a loopback port and shows it in an embedded
 // WebView2 window; closing the window ends the process.
-func runGUI(srv *Server, addr string, explicit bool) {
+func Run(srv interface{ Handler() http.Handler }, addr string, explicit bool) {
 	runtime.LockOSThread() // the window and its message loop must stay on one thread
 	// Per-process DPI awareness: crisp rendering, and window sizes are in real pixels.
 	pSetDPIAware.Call()
@@ -242,7 +247,7 @@ func runGUI(srv *Server, addr string, explicit bool) {
 		ln, err = net.Listen("tcp", "127.0.0.1:0")
 	}
 	if err != nil {
-		fatal("cannot listen: " + err.Error())
+		Fatal("cannot listen: " + err.Error())
 	}
 	go http.Serve(ln, srv.Handler())
 	url := "http://" + ln.Addr().String() + "/"
@@ -259,7 +264,7 @@ func runGUI(srv *Server, addr string, explicit bool) {
 		WindowOptions: webview2.WindowOptions{Title: "agent-viewer", Width: uint(1400 * scale), Height: uint(900 * scale), Center: true},
 	})
 	if w == nil {
-		fatal("Cannot start WebView2. Install the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11).")
+		Fatal("Cannot start WebView2. Install the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11).")
 	}
 	defer w.Destroy()
 

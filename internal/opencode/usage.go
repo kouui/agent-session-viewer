@@ -1,6 +1,7 @@
-package main
+package opencode
 
 import (
+	"agent-viewer/internal/model"
 	"encoding/json"
 	"sort"
 	"sync"
@@ -13,7 +14,7 @@ import (
 type ocRec struct {
 	model   string
 	created int64
-	u       Usage
+	u       model.Usage
 	cost    float64
 	done    bool // message finished: tokens/cost are final
 }
@@ -27,10 +28,10 @@ type ocUsageCache struct {
 	mu       sync.Mutex
 	sessions map[string]*ocSessUsage
 	fp       string
-	rows     []UsageRow
+	rows     []model.UsageRow
 }
 
-func (o *OpenCode) Usage() ([]UsageRow, error) {
+func (o *OpenCode) Usage() ([]model.UsageRow, error) {
 	c := &o.usage
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -97,7 +98,7 @@ WHERE session_id = ? AND time_created >= ? AND json_extract(data,'$.role') = 'as
 				continue
 			}
 			su.msgs[mid] = &ocRec{model: ocModelName(x.ProviderID, x.ModelID), created: created, cost: x.Cost, done: x.Time.Completed > 0,
-				u: Usage{Input: x.Tokens.Input, Output: x.Tokens.Output, Reasoning: x.Tokens.Reasoning,
+				u: model.Usage{Input: x.Tokens.Input, Output: x.Tokens.Output, Reasoning: x.Tokens.Reasoning,
 					CacheRead: x.Tokens.Cache.Read, CacheWrite: x.Tokens.Cache.Write}}
 		}
 		rows.Close()
@@ -119,17 +120,17 @@ WHERE session_id = ? AND time_created >= ? AND json_extract(data,'$.role') = 'as
 		sid, model string
 		hour       int64
 	}
-	agg := map[key]*UsageRow{}
+	agg := map[key]*model.UsageRow{}
 	for sid, su := range c.sessions {
 		for _, r := range su.msgs {
-			if r.cost == 0 && r.u == (Usage{}) {
+			if r.cost == 0 && r.u == (model.Usage{}) {
 				continue
 			}
 			k := key{sid, r.model, r.created / 3600000 * 3600000}
 			row := agg[k]
 			if row == nil {
 				zero := 0.0
-				row = &UsageRow{Session: sid, Model: r.model, Hour: k.hour, Cost: &zero}
+				row = &model.UsageRow{Session: sid, Model: r.model, Hour: k.hour, Cost: &zero}
 				agg[k] = row
 			}
 			row.Usage.Input += r.u.Input
@@ -140,7 +141,7 @@ WHERE session_id = ? AND time_created >= ? AND json_extract(data,'$.role') = 'as
 			*row.Cost += r.cost
 		}
 	}
-	out := make([]UsageRow, 0, len(agg))
+	out := make([]model.UsageRow, 0, len(agg))
 	for _, r := range agg {
 		out = append(out, *r)
 	}

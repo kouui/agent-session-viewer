@@ -1,10 +1,11 @@
-package main
+package model
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ---- Normalized contract ----------------------------------------------------
@@ -138,8 +139,8 @@ type Source struct {
 
 // ---- helpers ----------------------------------------------------------------
 
-// baseName handles both / and \ separators regardless of host OS.
-func baseName(p string) string {
+// BaseName handles both / and \ separators regardless of host OS.
+func BaseName(p string) string {
 	p = strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/")
 	if i := strings.LastIndex(p, "/"); i >= 0 {
 		p = p[i+1:]
@@ -147,8 +148,8 @@ func baseName(p string) string {
 	return p
 }
 
-// normPath makes project keys comparable across backends.
-func normPath(p string) string {
+// NormPath makes project keys comparable across backends.
+func NormPath(p string) string {
 	p = strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/")
 	if len(p) >= 2 && p[1] == ':' { // windows drive: case-insensitive
 		p = strings.ToLower(p)
@@ -156,9 +157,9 @@ func normPath(p string) string {
 	return p
 }
 
-// gitRoot walks up from dir looking for .git on the local filesystem.
+// GitRoot walks up from dir looking for .git on the local filesystem.
 // Returns dir unchanged when dir does not exist locally.
-func gitRoot(dir string) string {
+func GitRoot(dir string) string {
 	d := dir
 	for i := 0; i < 16 && d != "" && d != "."; i++ {
 		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
@@ -173,14 +174,19 @@ func gitRoot(dir string) string {
 	return dir
 }
 
-func rawString(s string) json.RawMessage {
+func RawString(s string) json.RawMessage {
 	b, _ := json.Marshal(s)
 	return b
 }
 
-func rawOrString(s string) json.RawMessage {
+func RawOrString(s string) json.RawMessage {
 	if json.Valid([]byte(s)) {
 		return json.RawMessage(s)
 	}
-	return rawString(s)
+	return RawString(s)
 }
+
+// RunningWindow: an unfinished turn only counts as "running" while the history
+// was touched this recently (a crashed or killed agent leaves turns open forever).
+// Long enough to cover a slow tool call or a main session waiting on subagents.
+const RunningWindow = 10 * time.Minute

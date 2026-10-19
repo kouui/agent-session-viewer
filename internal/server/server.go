@@ -1,10 +1,10 @@
-package main
+package server
 
 import (
-	"embed"
+	"agent-viewer/internal/model"
+	"agent-viewer/web"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net"
 	"net/http"
 	"sort"
@@ -12,19 +12,16 @@ import (
 	"time"
 )
 
-//go:embed web
-var webFS embed.FS
-
 type Server struct {
-	sources []*Source
-	byLabel map[string]*Source
+	sources []*model.Source
+	byLabel map[string]*model.Source
 
 	mu   sync.Mutex
 	subs map[chan string]struct{}
 }
 
-func NewServer(sources []*Source) *Server {
-	s := &Server{sources: sources, byLabel: map[string]*Source{}, subs: map[chan string]struct{}{}}
+func New(sources []*model.Source) *Server {
+	s := &Server{sources: sources, byLabel: map[string]*model.Source{}, subs: map[chan string]struct{}{}}
 	for _, src := range sources {
 		s.byLabel[src.Label] = src
 	}
@@ -33,8 +30,7 @@ func NewServer(sources []*Source) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	sub, _ := fs.Sub(webFS, "web")
-	mux.Handle("/", http.FileServerFS(sub))
+	mux.Handle("/", http.FileServerFS(web.FS))
 	mux.HandleFunc("/api/projects", s.handleProjects)
 	mux.HandleFunc("/api/session", s.handleSession)
 	mux.HandleFunc("/api/stats", s.handleStats)
@@ -66,11 +62,11 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 type ProjectOut struct {
-	Key      string    `json:"key"`
-	Name     string    `json:"name"`
-	Path     string    `json:"path"`
-	MTime    int64     `json:"mtime"`
-	Sessions []Session `json:"sessions"`
+	Key      string          `json:"key"`
+	Name     string          `json:"name"`
+	Path     string          `json:"path"`
+	MTime    int64           `json:"mtime"`
+	Sessions []model.Session `json:"sessions"`
 }
 
 type SourceOut struct {
@@ -102,7 +98,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 				if name == "" {
 					name = "(global)"
 				}
-				p = &ProjectOut{Key: ss.ProjectKey, Name: name, Path: ss.ProjectPath, Sessions: []Session{}}
+				p = &ProjectOut{Key: ss.ProjectKey, Name: name, Path: ss.ProjectPath, Sessions: []model.Session{}}
 				idx[ss.ProjectKey] = p
 				projects = append(projects, p)
 			}
@@ -158,7 +154,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sessions, _ := src.B.Sessions()
-		proj := map[string]Session{}
+		proj := map[string]model.Session{}
 		for _, ss := range sessions {
 			proj[ss.ID] = ss
 		}
@@ -238,8 +234,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// watch polls file stats (no DB access) and broadcasts when a source changes.
-func (s *Server) watch(every time.Duration) {
+// Watch polls file stats (no DB access) and broadcasts when a source changes.
+func (s *Server) Watch(every time.Duration) {
 	last := map[string]string{}
 	for _, src := range s.sources {
 		last[src.Label] = src.B.Fingerprint()
