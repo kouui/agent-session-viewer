@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -14,9 +15,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Win32 bits for the mini window (all called on the UI thread).
+// Win32 bits for the window modes (all called on the UI thread).
 var (
 	user32           = windows.NewLazySystemDLL("user32.dll")
+	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
 	pGetWindowLongW  = user32.NewProc("GetWindowLongPtrW")
 	pSetWindowLongW  = user32.NewProc("SetWindowLongPtrW")
 	pCallWindowProcW = user32.NewProc("CallWindowProcW")
@@ -29,78 +31,196 @@ var (
 	pSetForeground   = user32.NewProc("SetForegroundWindow")
 	pSetDPIAware     = user32.NewProc("SetProcessDPIAware")
 	pGetDPIForSystem = user32.NewProc("GetDpiForSystem")
+	pMonitorFromRect = user32.NewProc("MonitorFromRect")
+	pMessageBoxW     = user32.NewProc("MessageBoxW")
+	pMoveMemory      = kernel32.NewProc("RtlMoveMemory")
 )
 
 const (
-	gwlStyle      = ^uintptr(15) // -16
-	gwlpWndProc   = ^uintptr(3)  // -4
-	wsCaption     = 0x00C00000
-	wsThickFrame  = 0x00040000
-	wsSysMenu     = 0x00080000
-	hwndTopmost   = ^uintptr(0) // -1
-	hwndNoTopmost = ^uintptr(1) // -2
-	swpNoSize     = 0x0001
-	swpNoMove     = 0x0002
-	swpNoActivate = 0x0010
-	swpFrameChg   = 0x0020
-	swpShow       = 0x0040
-	swRestore     = 9
-	wmSysCommand  = 0x0112
-	wmNCLButton   = 0x00A1
-	scMinimize    = 0xF020
-	htCaption     = 2
-	spiWorkArea   = 0x0030
+	gwlStyle        = ^uintptr(15) // -16
+	gwlpWndProc     = ^uintptr(3)  // -4
+	wsCaption       = 0x00C00000
+	wsThickFrame    = 0x00040000
+	wsSysMenu       = 0x00080000
+	wsMinimizeBox   = 0x00020000
+	wsMaximizeBox   = 0x00010000
+	hwndTopmost     = ^uintptr(0) // -1
+	hwndNoTopmost   = ^uintptr(1) // -2
+	swpFrameChg     = 0x0020
+	swpShow         = 0x0040
+	swRestore       = 9
+	wmGetMinMaxInfo = 0x0024
+	wmExitSizeMove  = 0x0232
+	wmNCLButton     = 0x00A1
+	htCaption       = 2
+	spiWorkArea     = 0x0030
+)
 
-	miniW, miniH = 330, 170 // in 96-dpi units, scaled by miniState.scale
+// Window sizes in 96-dpi units; multiplied by the DPI scale at runtime.
+const (
+	miniW, miniH     = 330, 170
+	barW, barPad     = 380, 16
+	barMinW, barMinH = 260, 300
 )
 
 type rect struct{ left, top, right, bottom int32 }
 
-// miniState tracks the window between full and mini modes.
-type miniState struct {
+// jrect is the persisted form of a rect.
+type jrect struct{ L, T, R, B int32 }
+
+// winMgr switches the single native window between three modes:
+//
+//	full - normal resizable window
+//	mini - small borderless always-on-top stats window
+//	bar  - tall borderless always-on-top window, edge-resizable
+//
+// Each mode remembers its own geometry (persisted in window.json).
+type winMgr struct {
 	w         webview2.WebView
 	hwnd      uintptr
 	oldProc   uintptr
-	mini      bool
-	fullRect  rect
+	scale     float64
+	mode      string
 	fullStyle uintptr
-	miniRect  *rect   // remembered mini position
-	scale     float64 // dpi / 96
+	geo       map[string]jrect
+	geoFile   string
 }
 
-func (m *miniState) enter() {
-	if m.mini {
-		return
-	}
-	m.mini = true
-	pGetWindowRect.Call(m.hwnd, uintptr(unsafe.Pointer(&m.fullRect)))
-	m.fullStyle, _, _ = pGetWindowLongW.Call(m.hwnd, gwlStyle)
-	pShowWindow.Call(m.hwnd, swRestore) // in case it is already iconic
-	pSetWindowLongW.Call(m.hwnd, gwlStyle, m.fullStyle&^(wsCaption|wsThickFrame|wsSysMenu))
-	r := m.miniRect
-	if r == nil {
-		var wa rect
-		pSysParamInfo.Call(spiWorkArea, 0, uintptr(unsafe.Pointer(&wa)), 0)
-		mw, mh, pad := int32(miniW*m.scale), int32(miniH*m.scale), int32(16*m.scale)
-		r = &rect{wa.right - mw - pad, wa.bottom - mh - pad, wa.right - pad, wa.bottom - pad}
-	}
-	pSetWindowPos.Call(m.hwnd, hwndTopmost, uintptr(r.left), uintptr(r.top), uintptr(float64(miniW)*m.scale), uintptr(float64(miniH)*m.scale), swpFrameChg|swpShow)
-	m.w.Eval("setMini(true)")
+func (m *winMgr) workArea() rect {
+	var wa rect
+	pSysParamInfo.Call(spiWorkArea, 0, uintptr(unsafe.Pointer(&wa)), 0)
+	return wa
 }
 
-func (m *miniState) exit() {
-	if !m.mini {
+func (m *winMgr) px(v int) int32 { return int32(float64(v) * m.scale) }
+
+func (m *winMgr) curRect() rect {
+	var r rect
+	pGetWindowRect.Call(m.hwnd, uintptr(unsafe.Pointer(&r)))
+	return r
+}
+
+func (m *winMgr) load() {
+	m.geo = map[string]jrect{}
+	if b, err := os.ReadFile(m.geoFile); err == nil {
+		json.Unmarshal(b, &m.geo)
+	}
+}
+
+func (m *winMgr) save() {
+	if m.geoFile == "" {
 		return
 	}
-	m.mini = false
-	var cur rect
-	pGetWindowRect.Call(m.hwnd, uintptr(unsafe.Pointer(&cur)))
-	m.miniRect = &cur
-	pSetWindowLongW.Call(m.hwnd, gwlStyle, m.fullStyle)
-	f := m.fullRect
-	pSetWindowPos.Call(m.hwnd, hwndNoTopmost, uintptr(f.left), uintptr(f.top), uintptr(f.right-f.left), uintptr(f.bottom-f.top), swpFrameChg|swpShow)
-	pSetForeground.Call(m.hwnd)
-	m.w.Eval("setMini(false)")
+	r := m.curRect()
+	m.geo[m.mode] = jrect{r.left, r.top, r.right, r.bottom}
+	if b, err := json.Marshal(m.geo); err == nil {
+		os.MkdirAll(filepath.Dir(m.geoFile), 0o755)
+		os.WriteFile(m.geoFile, b, 0o644)
+	}
+}
+
+// saved returns a remembered rect for mode if it is still on a monitor.
+func (m *winMgr) saved(mode string) (rect, bool) {
+	j, ok := m.geo[mode]
+	if !ok || j.R-j.L < 100 || j.B-j.T < 80 {
+		return rect{}, false
+	}
+	r := rect{j.L, j.T, j.R, j.B}
+	if h, _, _ := pMonitorFromRect.Call(uintptr(unsafe.Pointer(&r)), 0); h == 0 {
+		return rect{}, false // monitor layout changed
+	}
+	return r, true
+}
+
+func (m *winMgr) defaultRect(mode string) rect {
+	wa := m.workArea()
+	pad := m.px(barPad)
+	switch mode {
+	case "mini":
+		w, h := m.px(miniW), m.px(miniH)
+		return rect{wa.right - w - pad, wa.bottom - h - pad, wa.right - pad, wa.bottom - pad}
+	case "bar":
+		return rect{wa.right - m.px(barW) - pad, wa.top + pad, wa.right - pad, wa.bottom - pad}
+	}
+	return m.curRect()
+}
+
+func (m *winMgr) set(mode string) {
+	if mode == m.mode || (mode != "full" && mode != "mini" && mode != "bar") {
+		return
+	}
+	pShowWindow.Call(m.hwnd, swRestore) // leave maximized/iconic state first
+	m.save()                            // remember the geometry of the mode we leave
+	m.mode = mode
+	style := m.fullStyle
+	switch mode {
+	case "mini":
+		style &^= wsCaption | wsThickFrame | wsSysMenu | wsMinimizeBox | wsMaximizeBox
+	case "bar": // keep the thick frame: it provides the native resize edges
+		style = (style &^ (wsCaption | wsSysMenu | wsMinimizeBox | wsMaximizeBox)) | wsThickFrame
+	}
+	pSetWindowLongW.Call(m.hwnd, gwlStyle, style)
+	r, ok := m.saved(mode)
+	if !ok {
+		r = m.defaultRect(mode)
+	}
+	if mode == "mini" { // fixed size
+		r.right, r.bottom = r.left+m.px(miniW), r.top+m.px(miniH)
+	}
+	order := hwndTopmost
+	if mode == "full" {
+		order = hwndNoTopmost
+	}
+	pSetWindowPos.Call(m.hwnd, order, uintptr(r.left), uintptr(r.top), uintptr(r.right-r.left), uintptr(r.bottom-r.top), swpFrameChg|swpShow)
+	if mode == "full" {
+		pSetForeground.Call(m.hwnd)
+	}
+	m.w.Eval(fmt.Sprintf("setUIMode(%q)", mode))
+}
+
+func (m *winMgr) wndProc(hwnd, msg, wp, lp uintptr) uintptr {
+	r, _, _ := pCallWindowProcW.Call(m.oldProc, hwnd, msg, wp, lp)
+	switch msg {
+	case wmGetMinMaxInfo:
+		if m.mode == "bar" { // MINMAXINFO.ptMinTrackSize = ints [6],[7]
+			var mm [10]int32
+			pMoveMemory.Call(uintptr(unsafe.Pointer(&mm[0])), lp, 40)
+			mm[6], mm[7] = m.px(barMinW), m.px(barMinH)
+			pMoveMemory.Call(lp, uintptr(unsafe.Pointer(&mm[0])), 40)
+		}
+	case wmExitSizeMove:
+		m.save()
+	}
+	return r
+}
+
+// initLogging sends log output to a file when the exe has no console.
+func initLogging() {
+	if defaultGUI != "1" {
+		return
+	}
+	dir := os.Getenv("LOCALAPPDATA")
+	if dir == "" {
+		return
+	}
+	dir = filepath.Join(dir, "agent-viewer")
+	os.MkdirAll(dir, 0o755)
+	if f, err := os.OpenFile(filepath.Join(dir, "agent-viewer.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		log.SetOutput(f)
+	}
+}
+
+// fatal reports an unrecoverable error: a message box in GUI mode, else stderr.
+func fatal(msg string) {
+	log.Print(msg)
+	if guiMode {
+		t, _ := windows.UTF16PtrFromString(msg)
+		c, _ := windows.UTF16PtrFromString("agent-viewer")
+		pMessageBoxW.Call(0, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), 0x10)
+	} else {
+		fmt.Fprintln(os.Stderr, msg)
+	}
+	os.Exit(1)
 }
 
 // runGUI serves the UI on a loopback port and shows it in an embedded
@@ -122,40 +242,40 @@ func runGUI(srv *Server, addr string, explicit bool) {
 		ln, err = net.Listen("tcp", "127.0.0.1:0")
 	}
 	if err != nil {
-		log.Fatal(err)
+		fatal("cannot listen: " + err.Error())
 	}
 	go http.Serve(ln, srv.Handler())
 	url := "http://" + ln.Addr().String() + "/"
 	fmt.Println("gui:", url)
 
-	data := os.Getenv("LOCALAPPDATA")
-	if data != "" {
-		data = filepath.Join(data, "agent-viewer", "webview2")
+	dir := os.Getenv("LOCALAPPDATA")
+	data := ""
+	if dir != "" {
+		dir = filepath.Join(dir, "agent-viewer")
+		data = filepath.Join(dir, "webview2")
 	}
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		DataPath: data, AutoFocus: true,
 		WindowOptions: webview2.WindowOptions{Title: "agent-viewer", Width: uint(1400 * scale), Height: uint(900 * scale), Center: true},
 	})
 	if w == nil {
-		log.Fatal("cannot start WebView2 (is the WebView2 runtime installed?)")
+		fatal("Cannot start WebView2. Install the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11).")
 	}
 	defer w.Destroy()
 
-	m := &miniState{w: w, hwnd: uintptr(w.Window()), scale: scale}
-	// Intercept minimize: instead of iconizing, switch to the small always-on-top mini window.
-	cb := windows.NewCallback(func(hwnd, msg, wp, lp uintptr) uintptr {
-		if msg == wmSysCommand && wp&0xFFF0 == scMinimize && !m.mini {
-			m.enter()
-			return 0
-		}
-		r, _, _ := pCallWindowProcW.Call(m.oldProc, hwnd, msg, wp, lp)
-		return r
-	})
-	m.oldProc, _, _ = pSetWindowLongW.Call(m.hwnd, gwlpWndProc, cb)
+	m := &winMgr{w: w, hwnd: uintptr(w.Window()), scale: scale, mode: "full"}
+	if dir != "" {
+		m.geoFile = filepath.Join(dir, "window.json")
+	}
+	m.load()
+	m.fullStyle, _, _ = pGetWindowLongW.Call(m.hwnd, gwlStyle)
+	if r, ok := m.saved("full"); ok {
+		pSetWindowPos.Call(m.hwnd, hwndNoTopmost, uintptr(r.left), uintptr(r.top), uintptr(r.right-r.left), uintptr(r.bottom-r.top), swpShow)
+	}
+	m.oldProc, _, _ = pSetWindowLongW.Call(m.hwnd, gwlpWndProc, windows.NewCallback(m.wndProc))
 
-	w.Bind("avEnterMini", func() { w.Dispatch(m.enter) })
-	w.Bind("avRestore", func() { w.Dispatch(m.exit) })
-	w.Bind("avQuit", func() { w.Dispatch(w.Terminate) })
+	w.Bind("avSetMode", func(mode string) { w.Dispatch(func() { m.set(mode) }) })
+	w.Bind("avQuit", func() { w.Dispatch(func() { m.save(); w.Terminate() }) })
 	w.Bind("avDrag", func() { // start a native window drag from the page
 		w.Dispatch(func() {
 			pReleaseCapture.Call()
@@ -164,4 +284,5 @@ func runGUI(srv *Server, addr string, explicit bool) {
 	})
 	w.Navigate(url)
 	w.Run()
+	m.save()
 }

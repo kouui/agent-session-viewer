@@ -42,8 +42,11 @@ type cxFile struct {
 	userEvt  bool // session records user input as event_msg (else as response_item)
 
 	// incremental stats scan state
-	statOff int64
-	stats   Stats
+	statOff   int64
+	openSize  int64
+	openMTime time.Time
+	open      bool // newest turn not completed (cached for openSize/openMTime)
+	stats     Stats
 }
 
 func NewCodex(root string) *Codex {
@@ -253,6 +256,7 @@ func (c *Codex) Sessions() ([]Session, error) {
 		s := Session{
 			Kind: "codex", ID: f.id, Title: title, Directory: f.cwd,
 			TimeCreated: f.created, MTime: f.mtime.UnixMilli(), Archived: f.archived,
+			Running:     time.Since(f.mtime) < runningWindow && codexTurnOpen(f),
 			ProjectPath: path, ProjectKey: normPath(path), ProjectName: baseName(path),
 		}
 		if path == "" {
@@ -501,4 +505,31 @@ func parseTokenCount(line []byte) (cxTokenCount, bool) {
 	}
 	i := l.Payload.Info
 	return cxTokenCount{Total: i.Total, Last: i.Last.Input, Window: i.Window, Time: parseTS(l.Timestamp)}, true
+}
+
+// runningWindow: an unfinished turn only counts as "running" while the history
+// was touched this recently (a crashed or killed agent leaves turns open forever).
+const runningWindow = 3 * time.Minute
+
+// codexTurnOpen reports whether the newest turn started but has not completed,
+// by looking at the tail of the rollout. The result is cached per file state.
+func codexTurnOpen(f *cxFile) bool {
+	if f.openSize == f.size && f.openMTime.Equal(f.mtime) {
+		return f.open
+	}
+	f.openSize, f.openMTime, f.open = f.size, f.mtime, false
+	fh, err := os.Open(f.path)
+	if err != nil {
+		return false
+	}
+	defer fh.Close()
+	const tail = 256 << 10
+	off := max(0, f.size-tail)
+	buf := make([]byte, f.size-off)
+	n, _ := fh.ReadAt(buf, off)
+	buf = buf[:n]
+	start := bytes.LastIndex(buf, []byte(`"task_started"`))
+	end := max(bytes.LastIndex(buf, []byte(`"task_complete"`)), bytes.LastIndex(buf, []byte(`"turn_aborted"`)))
+	f.open = start >= 0 && start > end
+	return f.open
 }

@@ -22,6 +22,8 @@ type Session struct {
 	TimeCreated int64  `json:"timeCreated"` // unix ms
 	MTime       int64  `json:"mtime"`       // unix ms, last activity
 	Archived    bool   `json:"archived,omitempty"`
+	// Running: the agent is working on this session right now (heuristic, see backends).
+	Running bool `json:"running,omitempty"`
 
 	ProjectKey  string `json:"-"` // grouping key (normalized path / id)
 	ProjectName string `json:"-"`

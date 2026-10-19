@@ -109,7 +109,11 @@ func (o *OpenCode) Sessions() ([]Session, error) {
 SELECT s.id, s.project_id, COALESCE(p.worktree,''), COALESCE(p.name,''),
        COALESCE(s.parent_id,''), s.title, s.directory, s.time_created, s.time_updated,
        COALESCE((SELECT MAX(m.time_created) FROM message m WHERE m.session_id = s.id), 0),
-       COALESCE(s.time_archived, 0)
+       COALESCE(s.time_archived, 0),
+       -- newest message is an assistant message that has not completed yet
+       COALESCE((SELECT 1 FROM message m WHERE m.session_id = s.id
+                 AND m.time_created = (SELECT MAX(time_created) FROM message WHERE session_id = s.id)
+                 AND json_extract(m.data,'$.role') = 'assistant' AND json_extract(m.data,'$.time.completed') IS NULL LIMIT 1), 0)
 FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 	if err != nil {
 		o.setErr(err)
@@ -120,14 +124,15 @@ FROM session s LEFT JOIN project p ON p.id = s.project_id`)
 	for rows.Next() {
 		var x Session
 		var pid, worktree, pname string
-		var upd, lastMsg, arch int64
+		var upd, lastMsg, arch, open int64
 		if err := rows.Scan(&x.ID, &pid, &worktree, &pname, &x.ParentID, &x.Title,
-			&x.Directory, &x.TimeCreated, &upd, &lastMsg, &arch); err != nil {
+			&x.Directory, &x.TimeCreated, &upd, &lastMsg, &arch, &open); err != nil {
 			return nil, err
 		}
 		x.Kind = "opencode"
 		x.MTime = max(upd, lastMsg)
 		x.Archived = arch != 0
+		x.Running = open != 0 && time.Since(time.UnixMilli(x.MTime)) < runningWindow
 		path := worktree
 		if pid == "global" || path == "" || path == "/" {
 			path = x.Directory

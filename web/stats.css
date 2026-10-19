@@ -1,0 +1,34 @@
+/* Compact stats views used by the mini and bar window modes. */
+.sv { display:none; flex-direction:column; height:100%; background:var(--panel); user-select:none; overflow:hidden; }
+body.mini #app, body.bar #app { display:none; }
+body.mini #miniview, body.bar #barview { display:flex; }
+.shead { display:flex; gap:4px; align-items:center; padding:3px 6px; background:var(--panel2); border-bottom:1px solid var(--line); cursor:move; flex:none; }
+.shead button { padding:0 6px; line-height:1.3; }
+.shead .nav { display:flex; gap:3px; align-items:center; }
+.shead .dot { width:8px; height:8px; border-radius:50%; background:var(--line); cursor:pointer; border:0; padding:0; }
+.shead .dot.on { background:var(--accent); }
+.shead .sp { flex:1; }
+.shead .rot.on { background:var(--sel); border-color:var(--userline); }
+.slive { width:8px; height:8px; border-radius:50%; background:var(--ok); flex:none; }
+.spage { padding:6px 12px 8px; display:flex; flex-direction:column; gap:4px; flex:1; min-height:0; overflow:hidden; }
+.spage .ttl { color:var(--dim); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; display:flex; gap:6px; align-items:center; }
+.spage .ttl button { font-size:.7rem; padding:0 5px; }
+.big { font-size:1.9rem; font-weight:600; line-height:1.15; white-space:nowrap; }
+.dimt { color:var(--dim); font-size:.85rem; }
+.kv { display:flex; justify-content:space-between; gap:10px; font-size:.85rem; white-space:nowrap; }
+.kv span:first-child { color:var(--dim); }
+.kv b { font-variant-numeric:tabular-nums; }
+.up { color:var(--err); } .down { color:var(--ok); }
+.spark { flex:1; display:flex; gap:3px; align-items:flex-end; min-height:18px; }
+.spark i { flex:1; background:var(--c1); border-radius:2px 2px 0 0; }
+.srow { display:flex; gap:6px; align-items:center; font-size:.82rem; min-width:0; }
+.srow .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+.srow .w { color:var(--dim); white-space:nowrap; font-size:.75rem; }
+.sdot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--line); }
+.sdot.recent { background:var(--ok); opacity:.55; }
+.sdot.running { background:var(--ok); animation:pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(94,194,122,.7); } 50% { box-shadow:0 0 0 5px rgba(94,194,122,0); } }
+.gauge { height:14px; background:var(--panel2); border-radius:4px; overflow:hidden; border:1px solid var(--line); }
+.gauge i { display:block; height:100%; border-radius:0 3px 3px 0; }
+.sbar { height:10px; border-radius:0 3px 3px 0; min-width:2px; }
+.barstub { padding:14px; color:var(--dim); font-size:.9rem; }
