@@ -163,12 +163,16 @@ FROM session WHERE id = ?`, id).Scan(&cost, &st.Usage.Input, &st.Usage.Output, &
 	st.Usage.Reasoning = reasoning
 	st.Cost = &cost
 	const model = `COALESCE(json_extract(data,'$.modelID'), json_extract(data,'$.model.modelID'))`
+	const provider = `COALESCE(json_extract(data,'$.providerID'), json_extract(data,'$.model.providerID'), '')`
 	for _, q := range []struct {
 		dst   *string
 		order string
 	}{{&st.FirstModel, "ASC"}, {&st.LastModel, "DESC"}} {
-		db.QueryRow(`SELECT `+model+` FROM message WHERE session_id = ? AND `+model+` IS NOT NULL
-ORDER BY time_created `+q.order+` LIMIT 1`, id).Scan(q.dst)
+		var prov, mdl string
+		if db.QueryRow(`SELECT `+provider+`, `+model+` FROM message WHERE session_id = ? AND `+model+` IS NOT NULL
+ORDER BY time_created `+q.order+` LIMIT 1`, id).Scan(&prov, &mdl) == nil {
+			*q.dst = ocModelName(prov, mdl)
+		}
 	}
 	// context length = prompt size (new + cached input) of the latest model call
 	var last string
@@ -196,12 +200,22 @@ ORDER BY time_created DESC LIMIT 1`, id).Scan(&last) == nil {
 
 // ---- conversion: opencode rows -> normalized contract -----------------------
 
+// ocModelName renders "provider/model" (just the model when the provider is unknown).
+func ocModelName(provider, model string) string {
+	if model == "" || provider == "" {
+		return model
+	}
+	return provider + "/" + model
+}
+
 type ocMessage struct {
-	Role    string `json:"role"`
-	Agent   string `json:"agent"`
-	ModelID string `json:"modelID"`
-	Model   struct {
-		ModelID string `json:"modelID"`
+	Role       string `json:"role"`
+	Agent      string `json:"agent"`
+	ModelID    string `json:"modelID"`
+	ProviderID string `json:"providerID"`
+	Model      struct {
+		ModelID    string `json:"modelID"`
+		ProviderID string `json:"providerID"`
 	} `json:"model"`
 	Finish string `json:"finish"`
 	Error  *struct {
@@ -249,9 +263,9 @@ func convertOCMessage(id string, created int64, data string) Message {
 		return m
 	}
 	m.Role, m.Agent, m.Finish = x.Role, x.Agent, x.Finish
-	m.Model = x.ModelID
+	m.Model = ocModelName(x.ProviderID, x.ModelID)
 	if m.Model == "" {
-		m.Model = x.Model.ModelID
+		m.Model = ocModelName(x.Model.ProviderID, x.Model.ModelID)
 	}
 	if x.Error != nil {
 		m.Error = strings.TrimSpace(x.Error.Name + " " + x.Error.Data.Message)

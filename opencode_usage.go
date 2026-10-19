@@ -77,9 +77,10 @@ WHERE session_id = ? AND time_created >= ? AND json_extract(data,'$.role') = 'as
 				continue
 			}
 			var x struct {
-				ModelID string  `json:"modelID"`
-				Cost    float64 `json:"cost"`
-				Tokens  struct {
+				ModelID    string  `json:"modelID"`
+				ProviderID string  `json:"providerID"`
+				Cost       float64 `json:"cost"`
+				Tokens     struct {
 					Input     int64 `json:"input"`
 					Output    int64 `json:"output"`
 					Reasoning int64 `json:"reasoning"`
@@ -95,7 +96,7 @@ WHERE session_id = ? AND time_created >= ? AND json_extract(data,'$.role') = 'as
 			if json.Unmarshal([]byte(data), &x) != nil {
 				continue
 			}
-			su.msgs[mid] = &ocRec{model: x.ModelID, created: created, cost: x.Cost, done: x.Time.Completed > 0,
+			su.msgs[mid] = &ocRec{model: ocModelName(x.ProviderID, x.ModelID), created: created, cost: x.Cost, done: x.Time.Completed > 0,
 				u: Usage{Input: x.Tokens.Input, Output: x.Tokens.Output, Reasoning: x.Tokens.Reasoning,
 					CacheRead: x.Tokens.Cache.Read, CacheWrite: x.Tokens.Cache.Write}}
 		}
