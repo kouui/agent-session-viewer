@@ -39,6 +39,19 @@ Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second 
   see the WAL; run the Windows build instead (hence no `/mnt/c` auto-detect).
 - opencode session `mtime` = max(session.time_updated, newest message time_created).
 
+## GUI window (Windows build)
+`agent-viewer-windows.exe -gui` shows the UI in an embedded native window (WebView2 via the pure-Go
+`go-webview2`, no cgo; needs the WebView2 runtime, preinstalled on Windows 11). The server listens on
+`127.0.0.1:9181` (random port if taken; `-addr` overrides) and closing the window exits the process.
+Settings persist in `%LOCALAPPDATA%\agent-viewer\webview2` (hence the fixed default port: localStorage
+is per origin).
+
+**Mini mode:** minimizing the window turns it into a small borderless always-on-top window (bottom-right)
+showing today's cost and tokens, this hour's tokens, cache hit rate, active sessions and a 12-hour
+tokens sparkline. Drag it by the header; `⤢` restores the full window, `✕` quits. A `mini` button in
+the top bar enters it manually. The same view is available in any browser at `#mini`.
+The Linux/WSL build has no embedded window (would need cgo + WebKitGTK); use the browser.
+
 ## Costs page
 `Costs` button (top bar, `#costs`): a range filter (24h / 7d / 30d / all), tiles (total cost, tokens,
 cache hit rate, sessions), a **by-project table** with a stacked bar per row split by agent · model

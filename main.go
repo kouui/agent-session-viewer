@@ -20,7 +20,10 @@ func main() {
 	poll := flag.Duration("poll", time.Second, "file change poll interval")
 	var dirs multiFlag
 	flag.Var(&dirs, "dir", "extra history path: opencode data dir / opencode.db / codex home (repeatable)")
+	gui := flag.Bool("gui", false, "show the UI in an embedded native window (Windows build)")
 	flag.Parse()
+	addrSet := false
+	flag.Visit(func(f *flag.Flag) { addrSet = addrSet || f.Name == "addr" })
 
 	sources := detectSources(dirs)
 	if len(sources) == 0 {
@@ -32,6 +35,10 @@ func main() {
 
 	srv := NewServer(sources)
 	go srv.watch(*poll)
+	if *gui {
+		runGUI(srv, *addr, addrSet)
+		return
+	}
 	fmt.Printf("listening on http://%s\n", *addr)
 	log.Fatal(http.ListenAndServe(*addr, srv.Handler()))
 }
