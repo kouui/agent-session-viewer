@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-viewer</title>
+<style>
+:root {
+  --bg:#13151a; --panel:#1a1d24; --panel2:#20242d; --line:#2b303b; --fg:#d7dae0; --dim:#8a91a0;
+  --accent:#6aa3ff; --ok:#5ec27a; --warn:#e3b341; --err:#f0686b; --user:#2a3a55; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+* { box-sizing:border-box; }
+html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+button { font:inherit; color:var(--fg); background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:1px 8px; cursor:pointer; }
+button:hover { background:#2a303c; }
+button.on { background:#25324a; border-color:#3a4f73; }
+#app { display:grid; grid-template-columns:var(--sw,330px) 1fr; height:100%; }
+#side { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; min-width:0; }
+#side header { padding:10px 12px; border-bottom:1px solid var(--line); }
+#side h1 { font-size:14px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+#live { width:9px; height:9px; border-radius:50%; background:var(--err); display:inline-block; }
+#live.on { background:var(--ok); }
+#filter { width:100%; padding:6px 8px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+#srcwarn { color:var(--warn); font-size:12px; margin-top:6px; }
+#srcerr { color:var(--err); font-size:12px; margin-top:6px; white-space:pre-wrap; }
+#hint { color:var(--dim); font-size:11px; margin-top:6px; }
+#list { overflow:auto; flex:1; }
+.proj > .ph { padding:6px 12px; cursor:pointer; background:var(--panel2); border-bottom:1px solid var(--line); display:flex; gap:6px; align-items:baseline; position:sticky; top:0; z-index:1; }
+.proj > .ph:hover { background:#272c37; }
+.ph .arrow { color:var(--dim); width:10px; }
+.ph .pn { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ph .pc { color:var(--dim); font-size:12px; margin-left:auto; white-space:nowrap; }
+.badge { font-size:10px; padding:0 5px; border-radius:8px; border:1px solid var(--line); color:var(--dim); white-space:nowrap; }
+.badge.opencode { color:#7fd6c2; border-color:#2f5a50; }
+.badge.codex { color:#e6a8ff; border-color:#5a3a66; }
+.sess { padding:6px 12px 6px 28px; cursor:pointer; border-bottom:1px solid var(--line); position:relative; }
+.sess:hover { background:#222733; }
+.sess.sel { background:#25324a; }
+.sess.open { box-shadow:inset 3px 0 0 var(--accent); }
+.sess .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sess .m { color:var(--dim); font-size:12px; display:flex; gap:6px; }
+.sess .split { position:absolute; right:8px; top:6px; display:none; font-size:11px; padding:0 6px; }
+.sess:hover .split { display:block; }
+.sess.sub { padding-left:44px; }
+
+/* workspace */
+#main { display:flex; flex-direction:column; min-width:0; min-height:0; }
+#bar { display:flex; gap:6px; align-items:center; padding:5px 10px; background:var(--panel); border-bottom:1px solid var(--line); color:var(--dim); font-size:12px; }
+#bar .sp { flex:1; }
+#ws { flex:1; display:grid; gap:4px; padding:4px; min-height:0; min-width:0; background:#0e1014; }
+.pane { display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg); border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+.pane.focus { border-color:#3a4f73; }
+.tabs { display:flex; background:var(--panel); border-bottom:1px solid var(--line); overflow-x:auto; flex:none; }
+.tab { display:flex; align-items:center; gap:6px; padding:3px 4px 3px 10px; max-width:230px; border-right:1px solid var(--line); cursor:pointer; color:var(--dim); white-space:nowrap; font-size:13px; }
+.tab.act { background:var(--bg); color:var(--fg); box-shadow:inset 0 2px 0 var(--accent); }
+.tab .tt { overflow:hidden; text-overflow:ellipsis; }
+.tab .x { padding:0 5px; border-radius:4px; color:var(--dim); }
+.tab .x:hover { background:#3a2326; color:var(--err); }
+.tab .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none; }
+.tabs .fill { flex:1; }
+.tabs .pbtn { align-self:center; margin:0 4px; font-size:11px; }
+.views { flex:1; min-height:0; position:relative; }
+.view { position:absolute; inset:0; display:flex; flex-direction:column; }
+.view[hidden] { display:none; }
+.vh { padding:6px 12px; border-bottom:1px solid var(--line); background:var(--panel); flex:none; }
+.vh .title { font-weight:600; }
+.vh .meta { color:var(--dim); font-size:11px; font-family:var(--mono); word-break:break-all; }
+.msgs { overflow:auto; flex:1; padding:12px; }
+.empty { color:var(--dim); padding:40px; text-align:center; }
+.msg { margin:0 auto 12px; max-width:980px; border:1px solid var(--line); border-radius:8px; background:var(--panel); }
+.msg.user { background:var(--user); border-color:#3a4f73; }
+.msg > .mhd { padding:3px 10px; font-size:12px; color:var(--dim); border-bottom:1px solid var(--line); display:flex; gap:10px; flex-wrap:wrap; }
+.msg > .mhd .role { font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; }
+.msg.user > .mhd .role { color:#9ec1ff; }
+.msg > .mhd .when { margin-left:auto; }
+.msg.cont { margin-top:-13px; border-top:none; border-top-left-radius:0; border-top-right-radius:0; }
+.msg.cont > .mhd { display:none; }
+.part { padding:5px 10px; }
+.part.text .body { white-space:pre-wrap; word-break:break-word; }
+details.fold { margin:2px 0; border:1px solid var(--line); border-radius:6px; background:rgba(0,0,0,.18); }
+details.fold > summary { cursor:pointer; padding:3px 8px; color:var(--dim); font-size:13px; display:flex; gap:8px; align-items:center; }
+details.fold > summary .name { color:var(--fg); font-family:var(--mono); font-weight:600; }
+details.fold > summary .ttl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+details.fold .inner { padding:6px 8px; border-top:1px solid var(--line); }
+.st { font-size:11px; padding:0 6px; border-radius:8px; }
+.st.completed { background:#1d3a28; color:var(--ok); }
+.st.running,.st.pending { background:#3e3416; color:var(--warn); }
+.st.error { background:#42201f; color:var(--err); }
+.lbl { color:var(--dim); font-size:11px; text-transform:uppercase; margin:4px 0 2px; }
+pre { margin:0; font:12px/1.45 var(--mono); white-space:pre-wrap; word-break:break-word; max-height:420px; overflow:auto; background:rgba(0,0,0,.25); padding:6px 8px; border-radius:4px; }
+.reason .inner { color:var(--dim); white-space:pre-wrap; font-style:italic; }
+.fin { color:var(--dim); font-size:11px; font-family:var(--mono); padding:2px 10px 4px; }
+.files { font-family:var(--mono); font-size:12px; color:var(--dim); }
+#ws.empty-ws { display:flex; align-items:center; justify-content:center; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <header>
+      <h1><span id="live" title="SSE connection"></span> agent-viewer <span class="badge">read-only</span></h1>
+      <input id="filter" placeholder="filter projects / sessions…" autocomplete="off">
+      <div id="hint">click: open in focused pane · ctrl/shift-click or [split]: open in new pane</div>
+      <div id="srcwarn"></div><div id="srcerr"></div>
+    </header>
+    <div id="list"></div>
+  </aside>
+  <main id="main">
+    <div id="bar">
+      <span>layout</span>
+      <button data-layout="cols" title="panes side by side">▥ columns</button>
+      <button data-layout="rows" title="panes stacked">▤ rows</button>
+      <button data-layout="grid" title="grid">▦ grid</button>
+      <span class="sp"></span>
+      <span id="count"></span>
+    </div>
+    <div id="ws"></div>
+  </main>
+</div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v === true) e.setAttribute(k, ""); else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+const fmtAbs = t => t ? new Date(t).toLocaleString() : "";
+function fmtRel(t) {
+  if (!t) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  if (s < 86400 * 30) return Math.floor(s / 86400) + "d ago";
+  return new Date(t).toLocaleDateString();
+}
+const fmtTok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0);
+const skey = (src, id) => src + "\u0000" + id;
+
+/* =================== data =================== */
+let projects = [], sources = [];
+const sessIndex = new Map(); // skey -> {p, s}
+const expanded = new Set(JSON.parse(localStorage.getItem("av.expanded") || "[]"));
+let firstLoad = true;
+
+async function refreshProjects() {
+  let r;
+  try { r = await (await fetch("/api/projects")).json(); } catch { return; }
+  projects = r.projects; sources = r.sources;
+  sessIndex.clear();
+  for (const p of projects) for (const s of p.sessions) sessIndex.set(skey(s.source, s.id), { p, s });
+  if (firstLoad) { firstLoad = false; if (!expanded.size && projects[0]) expanded.add(projects[0].key); }
+  renderSidebar();
+  for (const pane of panes) pane.renderTabs();
+  for (const v of allViews()) v.renderHeader();
+}
+
+/* =================== sidebar =================== */
+function openKeys() { return new Set(allViews().map(v => skey(v.src, v.id))); }
+function renderSidebar() {
+  const q = $("#filter").value.trim().toLowerCase();
+  const list = $("#list"), top = list.scrollTop;
+  const opened = openKeys(), act = activeView();
+  const frag = document.createDocumentFragment();
+  for (const p of projects) {
+    const pm = (p.name + " " + p.path).toLowerCase().includes(q);
+    const ss = q && !pm ? p.sessions.filter(s => s.title.toLowerCase().includes(q)) : p.sessions;
+    if (!ss.length) continue;
+    const open = q ? true : expanded.has(p.key);
+    const head = h("div", { class: "ph", title: p.path, onclick: () => {
+      expanded.has(p.key) ? expanded.delete(p.key) : expanded.add(p.key);
+      localStorage.setItem("av.expanded", JSON.stringify([...expanded]));
+      renderSidebar();
+    } },
+      h("span", { class: "arrow" }, open ? "▾" : "▸"),
+      h("span", { class: "pn" }, p.name),
+      h("span", { class: "pc" }, ss.length + " · " + fmtRel(p.mtime)));
+    const box = h("div", { class: "proj" }, head);
+    if (open) for (const s of ss) {
+      const k = skey(s.source, s.id);
+      box.append(h("div", {
+        class: "sess" + (act && skey(act.src, act.id) === k ? " sel" : "") + (opened.has(k) ? " open" : "") + (s.parentId ? " sub" : ""),
+        title: s.directory,
+        onclick: e => openSession(s.source, s.id, e.ctrlKey || e.shiftKey || e.metaKey),
+      },
+        h("div", { class: "t" }, s.title || "(untitled)"),
+        h("div", { class: "m" }, h("span", { class: "badge " + s.kind }, s.kind), fmtRel(s.mtime),
+          s.parentId ? h("span", { class: "badge" }, "sub") : null,
+          s.archived ? h("span", { class: "badge" }, "archived") : null),
+        h("button", { class: "split", title: "open in new pane", onclick: e => { e.stopPropagation(); openSession(s.source, s.id, true); } }, "split")));
+    }
+    frag.append(box);
+  }
+  list.replaceChildren(frag);
+  list.scrollTop = top;
+  const stale = sources.filter(s => s.stale).map(s => s.label);
+  $("#srcwarn").textContent = stale.length ? "⚠ " + stale.join(", ") + ": opened immutable — recent (WAL) writes not visible." : "";
+  $("#srcerr").textContent = sources.filter(s => s.error).map(s => s.label + ": " + s.error).join("\n");
+}
+$("#filter").addEventListener("input", renderSidebar);
+
+/* =================== session view =================== */
+class View {
+  constructor(src, id) {
+    this.src = src; this.id = id; this.cursor = ""; this.msgEls = new Map(); this.partEls = new Map(); this.partData = new Map();
+    this.syncing = false; this.again = false; this.dirty = true; this.visible = false;
+    this.title = h("div", { class: "title" }); this.meta = h("div", { class: "meta" });
+    this.vh = h("div", { class: "vh" }, this.title, this.meta);
+    this.msgs = h("div", { class: "msgs" });
+    this.el = h("div", { class: "view", hidden: true }, this.vh, this.msgs);
+    this.first = true;
+    this.renderHeader();
+  }
+  info() { return sessIndex.get(skey(this.src, this.id)); }
+  renderHeader() {
+    const f = this.info();
+    if (!f) { this.title.textContent = this.id; this.meta.textContent = this.src; return; }
+    const { p, s } = f;
+    this.title.textContent = s.title || "(untitled)";
+    let m = `${s.kind} · ${p.name} · ${s.directory || p.path} · created ${fmtAbs(s.timeCreated)} · updated ${fmtAbs(s.mtime)}`;
+    if (s.tokensIn || s.tokensOut) m += ` · tok in ${fmtTok(s.tokensIn)} / out ${fmtTok(s.tokensOut)}`;
+    if (s.cost) m += ` · $${s.cost.toFixed(4)}`;
+    this.meta.textContent = m;
+  }
+  setVisible(v) {
+    this.visible = v; this.el.hidden = !v;
+    if (v && this.dirty) this.sync();
+  }
+  markDirty() { this.dirty = true; if (this.visible) this.sync(); }
+  async sync() {
+    if (this.syncing) { this.again = true; return; }
+    this.syncing = true; this.dirty = false;
+    try {
+      for (;;) {
+        const r = await fetch(`/api/session?src=${encodeURIComponent(this.src)}&id=${encodeURIComponent(this.id)}&cursor=${encodeURIComponent(this.cursor)}`);
+        if (!r.ok) throw new Error(await r.text());
+        const d = await r.json();
+        if (this.closed) return;
+        const stick = this.first || this.msgs.scrollHeight - this.msgs.scrollTop - this.msgs.clientHeight < 80;
+        this.apply(d);
+        if (stick) this.msgs.scrollTop = this.msgs.scrollHeight;
+        this.first = false;
+        if (!d.more) break;
+      }
+    } catch (e) {
+      this.msgs.replaceChildren(h("div", { class: "empty" }, "Failed to load: " + e.message));
+    } finally {
+      this.syncing = false;
+      if (this.again) { this.again = false; this.sync(); }
+    }
+  }
+  apply(d) {
+    if (d.reset) { this.msgs.replaceChildren(); this.msgEls.clear(); this.partEls.clear(); this.partData.clear(); }
+    this.cursor = d.cursor;
+    for (const m of d.messages) {
+      let el = null;
+      for (const p of m.parts || []) {
+        const old = this.partEls.get(p.id);
+        if (old) { this.upsertPart(old, p); continue; }
+        if (!el) el = this.ensureMsg(m);
+        this.upsertPart(null, p, el);
+      }
+      if (m.role) this.ensureMsg(m);
+    }
+    this.msgs.querySelector(".empty")?.remove();
+    if (!this.msgEls.size) this.msgs.append(h("div", { class: "empty" }, "No messages"));
+  }
+  upsertPart(old, p, msgEl) {
+    // shallow merge: absent fields keep previous values
+    const prev = this.partData.get(p.id);
+    const data = prev ? Object.assign(prev, p) : p;
+    this.partData.set(p.id, data);
+    const el = renderPart(data);
+    if (old) {
+      const od = old.querySelector("details"), nd = el.querySelector("details");
+      if (od && nd && od.open) nd.open = true;
+      el.dataset.k = old.dataset.k;
+      old.replaceWith(el);
+    } else insertSorted(msgEl.querySelector(".parts"), el, p.id);
+    this.partEls.set(p.id, el);
+  }
+  ensureMsg(m) {
+    let el = this.msgEls.get(m.id);
+    const key = String(m.time || 9e15).padStart(16, "0") + m.id;
+    if (!el) {
+      el = h("div", { class: "msg" }, h("div", { class: "mhd" }), h("div", { class: "parts" }));
+      this.msgEls.set(m.id, el);
+      insertSorted(this.msgs, el, key);
+    } else if (m.time && el.dataset.k !== key) { el.dataset.k = key; }
+    if (m.role) {
+      el.dataset.role = m.role;
+      el.firstChild.replaceChildren(...[h("span", { class: "role" }, m.role),
+        m.agent ? h("span", {}, m.agent) : null, m.model ? h("span", {}, m.model) : null,
+        m.finish ? h("span", {}, "finish: " + m.finish) : null,
+        m.error ? h("span", { style: "color:var(--err)" }, "error: " + m.error) : null,
+        h("span", { class: "when" }, fmtAbs(m.time))].filter(Boolean));
+    }
+    this.fixCont(el); if (el.nextElementSibling) this.fixCont(el.nextElementSibling);
+    return el;
+  }
+  // consecutive assistant messages render as one visual card
+  fixCont(el) {
+    const prev = el.previousElementSibling;
+    el.className = "msg " + (el.dataset.role || "") + (prev && prev.dataset.role === "assistant" && el.dataset.role === "assistant" ? " cont" : "");
+  }
+  close() { this.closed = true; this.el.remove(); }
+}
+function insertSorted(parent, el, key) {
+  el.dataset.k = key;
+  for (let c = parent.lastElementChild; c; c = c.previousElementSibling) {
+    if (c.dataset.k <= key) { c.after(el); return; }
+  }
+  parent.prepend(el);
+}
+
+/* ---- part rendering ---- */
+const CAP = 20000;
+function pre(v) {
+  const text = typeof v === "string" ? v : JSON.stringify(v, null, 2);
+  return h("pre", {}, text.length > CAP ? text.slice(0, CAP) + `\n… [${text.length - CAP} more chars truncated]` : text);
+}
+function toolHint(i) {
+  if (!i) return "";
+  if (typeof i === "string") return i.replace(/\s+/g, " ").slice(0, 120);
+  const v = i.command || i.cmd || i.filePath || i.path || i.pattern || i.url || i.query || i.description || "";
+  return String(Array.isArray(v) ? v.join(" ") : v).replace(/\s+/g, " ").slice(0, 120);
+}
+function renderPart(p) {
+  switch (p.kind) {
+    case "text":
+      return h("div", { class: "part text" }, h("div", { class: "body" }, p.text || ""));
+    case "reasoning":
+      return h("div", { class: "part reason" }, h("details", { class: "fold" },
+        h("summary", {}, "thinking", h("span", { class: "ttl" }, (p.text || "").slice(0, 100).replace(/\s+/g, " "))),
+        h("div", { class: "inner" }, p.text || "")));
+    case "tool": {
+      const inner = h("div", { class: "inner" });
+      if (p.input !== undefined) inner.append(h("div", { class: "lbl" }, "input"), pre(p.input));
+      if (p.output) inner.append(h("div", { class: "lbl" }, "output"), pre(p.output));
+      if (p.error) inner.append(h("div", { class: "lbl" }, "error"), pre(p.error));
+      return h("div", { class: "part tool" }, h("details", { class: "fold", open: p.status === "running" },
+        h("summary", {}, h("span", { class: "name" }, p.tool || "tool"), h("span", { class: "ttl" }, p.title || toolHint(p.input)),
+          h("span", { class: "st " + (p.status || "") }, p.status || "?"),
+          p.durationMs ? (p.durationMs / 1000).toFixed(1) + "s" : ""), inner));
+    }
+    case "patch":
+      return h("div", { class: "part" }, h("details", { class: "fold" },
+        h("summary", {}, h("span", { class: "name" }, "patch"), h("span", { class: "ttl" }, (p.files || []).length + " file(s)")),
+        h("div", { class: "inner files" }, (p.files || []).join("\n"))));
+    case "step": {
+      const u = p.usage || {};
+      return h("div", { class: "fin" }, `step ${p.text || ""} · in ${fmtTok(u.input)} out ${fmtTok(u.output)}` +
+        (u.reasoning ? ` reason ${fmtTok(u.reasoning)}` : "") + (u.cacheRead || u.cacheWrite ? ` cache r${fmtTok(u.cacheRead)}/w${fmtTok(u.cacheWrite)}` : "") +
+        (p.cost ? ` · $${p.cost.toFixed(4)}` : ""));
+    }
+    default:
+      return h("div", { class: "part" }, h("details", { class: "fold" },
+        h("summary", {}, h("span", { class: "name" }, p.tool || p.kind || "?")), h("div", { class: "inner" }, pre(p.raw !== undefined ? p.raw : p))));
+  }
+}
+
+/* =================== panes / tabs / layout =================== */
+class Pane {
+  constructor() {
+    this.tabs = []; // Views
+    this.active = null;
+    this.tabsEl = h("div", { class: "tabs" });
+    this.viewsEl = h("div", { class: "views" });
+    this.el = h("div", { class: "pane", onmousedown: () => focusPane(this) }, this.tabsEl, this.viewsEl);
+  }
+  add(view) {
+    this.tabs.push(view); this.viewsEl.append(view.el); this.activate(view);
+  }
+  activate(view) {
+    this.active = view;
+    for (const v of this.tabs) v.setVisible(v === view);
+    this.renderTabs();
+  }
+  closeTab(view) {
+    const i = this.tabs.indexOf(view);
+    if (i < 0) return;
+    this.tabs.splice(i, 1); view.close();
+    if (this.active === view) { this.active = null; if (this.tabs.length) this.activate(this.tabs[Math.min(i, this.tabs.length - 1)]); }
+    if (!this.tabs.length) removePane(this); else this.renderTabs();
+    afterChange();
+  }
+  renderTabs() {
+    this.tabsEl.replaceChildren(...[...this.tabs.map(v => {
+      const f = v.info();
+      return h("div", { class: "tab" + (v === this.active ? " act" : ""), title: f ? f.s.title : v.id,
+        onclick: () => { this.activate(v); focusPane(this); afterChange(); } },
+        f ? h("span", { class: "badge " + f.s.kind }, f.s.kind) : null,
+        h("span", { class: "tt" }, f ? (f.s.title || "(untitled)") : v.id),
+        h("span", { class: "x", title: "close tab", onclick: e => { e.stopPropagation(); this.closeTab(v); } }, "×"));
+    }), h("span", { class: "fill" }),
+      this.tabs.length > 1 ? h("button", { class: "pbtn", title: "move active tab into a new pane", onclick: e => { e.stopPropagation(); splitOut(this); } }, "split out") : null].filter(Boolean));
+  }
+}
+let panes = [], focused = null, layout = localStorage.getItem("av.layout") || "cols";
+const allViews = () => panes.flatMap(p => p.tabs);
+const activeView = () => focused && focused.active;
+
+function focusPane(p) {
+  focused = p;
+  for (const x of panes) x.el.classList.toggle("focus", x === p);
+  renderSidebar();
+}
+function removePane(p) {
+  panes = panes.filter(x => x !== p); p.el.remove();
+  if (focused === p) focused = panes[panes.length - 1] || null;
+  layoutPanes();
+}
+function newPane() {
+  const p = new Pane(); panes.push(p); $("#ws").append(p.el); layoutPanes(); return p;
+}
+function splitOut(pane) {
+  const v = pane.active; if (!v || pane.tabs.length < 2) return;
+  pane.tabs.splice(pane.tabs.indexOf(v), 1);
+  pane.active = null; pane.activate(pane.tabs[pane.tabs.length - 1]);
+  const np = newPane(); np.tabs.push(v); np.viewsEl.append(v.el); np.activate(v);
+  focusPane(np); afterChange();
+}
+function layoutPanes() {
+  const ws = $("#ws"), n = panes.length;
+  ws.classList.toggle("empty-ws", !n);
+  if (!n) { ws.style.gridTemplate = ""; ws.replaceChildren("Select a session in the sidebar"); return; }
+  if (ws.firstChild && ws.firstChild.nodeType === 3) ws.firstChild.remove();
+  let cols = n, rows = 1;
+  if (layout === "rows") { cols = 1; rows = n; }
+  else if (layout === "grid") { cols = Math.ceil(Math.sqrt(n)); rows = Math.ceil(n / cols); }
+  ws.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  ws.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+  document.querySelectorAll("#bar [data-layout]").forEach(b => b.classList.toggle("on", b.dataset.layout === layout));
+  $("#count").textContent = n + " pane" + (n > 1 ? "s" : "") + " · " + allViews().length + " session" + (allViews().length > 1 ? "s" : "");
+}
+document.querySelectorAll("#bar [data-layout]").forEach(b => b.addEventListener("click", () => {
+  layout = b.dataset.layout; localStorage.setItem("av.layout", layout); layoutPanes();
+}));
+
+function openSession(src, id, inNewPane) {
+  // already open somewhere? just focus it
+  for (const p of panes) for (const v of p.tabs) if (v.src === src && v.id === id) {
+    p.activate(v); focusPane(p); afterChange(); return;
+  }
+  let pane = inNewPane || !focused ? newPane() : focused;
+  const v = new View(src, id);
+  pane.add(v); focusPane(pane); afterChange();
+}
+function afterChange() {
+  saveState(); renderSidebar(); layoutPanes();
+  const a = activeView();
+  if (a) location.hash = encodeURIComponent(a.src) + "/" + encodeURIComponent(a.id);
+}
+function saveState() {
+  localStorage.setItem("av.panes", JSON.stringify(panes.map(p => ({
+    tabs: p.tabs.map(v => [v.src, v.id]), active: p.active ? p.tabs.indexOf(p.active) : 0, focus: p === focused }))));
+}
+function restoreState() {
+  try {
+    const st = JSON.parse(localStorage.getItem("av.panes") || "[]");
+    for (const ps of st) {
+      if (!ps.tabs.length) continue;
+      const p = newPane();
+      ps.tabs.forEach(([s, i]) => p.tabs.push(new View(s, i)));
+      p.tabs.forEach(v => p.viewsEl.append(v.el));
+      p.activate(p.tabs[Math.min(ps.active || 0, p.tabs.length - 1)]);
+      if (ps.focus) focused = p;
+    }
+  } catch {}
+  if (!focused && panes.length) focused = panes[0];
+  if (focused) focusPane(focused);
+}
+
+/* =================== realtime =================== */
+let timer = null;
+function onChange(ev) {
+  let d = {}; try { d = JSON.parse(ev.data); } catch {}
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    refreshProjects();
+    for (const v of allViews()) if (!d.src || d.src === v.src) v.markDirty();
+  }, 250);
+}
+function connect() {
+  const es = new EventSource("/api/events");
+  es.onopen = () => { $("#live").classList.add("on"); refreshProjects(); allViews().forEach(v => v.markDirty()); };
+  es.onerror = () => $("#live").classList.remove("on");
+  es.addEventListener("change", onChange);
+}
+setInterval(renderSidebar, 30000); // refresh relative times
+
+(async function init() {
+  restoreState();
+  layoutPanes();
+  await refreshProjects();
+  const m = location.hash.slice(1).split("/");
+  if (m.length === 2 && m[0] && m[1]) openSession(decodeURIComponent(m[0]), decodeURIComponent(m[1]), false);
+  connect();
+})();
+</script>
+</body>
+</html>
