@@ -90,6 +90,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			msg = err.Error()
 		}
 		srcs = append(srcs, SourceOut{Label: src.Label, Kind: src.B.Kind(), Path: src.B.Path(), Stale: stale, Error: msg})
+		propagateRunning(list)
 		for _, ss := range list {
 			ss.Source = src.Label
 			p := idx[ss.ProjectKey]
@@ -247,6 +248,28 @@ func (s *Server) Watch(every time.Duration) {
 				b, _ := json.Marshal(map[string]string{"src": src.Label})
 				s.broadcast(string(b))
 			}
+		}
+	}
+}
+
+// propagateRunning marks every ancestor of a running session as running too: a parent
+// waiting on its subagents is still working even if its own history is quiet.
+func propagateRunning(list []model.Session) {
+	byID := make(map[string]int, len(list))
+	for i, s := range list {
+		byID[s.ID] = i
+	}
+	for _, s := range list {
+		if !s.Running {
+			continue
+		}
+		for id, depth := s.ParentID, 0; id != "" && depth < 8; depth++ {
+			i, ok := byID[id]
+			if !ok {
+				break
+			}
+			list[i].Running = true
+			id = list[i].ParentID
 		}
 	}
 }

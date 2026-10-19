@@ -88,6 +88,7 @@ without completion; and the history was touched in the last 10 min (a crashed ag
 sessions are listed under a project; with none running, its latest session is shown dimmed. Drag a mode window by its header.
 Mini and bar are also available in a browser at `#mini` / `#bar`. The Linux/WSL build has no embedded
 window (would need cgo + WebKitGTK); use the browser.
+A parent session counts as running while any of its subagents is running.
 
 ## Costs page
 
