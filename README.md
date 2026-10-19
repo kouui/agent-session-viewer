@@ -58,9 +58,9 @@ size and position (`window.json`):
   running now, with model and context %) with the latest N messages (user prompts, assistant text, one-line
   tool calls; default 4, adjustable). New messages slide in, older ones fade out.
 
-*Running* is a heuristic (opencode: newest assistant message unfinished; codex: a started turn without
-completion; plus activity in the last ~2 min). *Active* = running or touched in the last 10 minutes; a
-project with nothing active shows its latest session dimmed. Drag a mode window by its header.
+*Running* (= active) is read from the last message: opencode - newest assistant message unfinished; codex - a started turn
+without completion; and the history was touched in the last 10 min (a crashed agent leaves turns open). Only running
+sessions are listed under a project; with none running, its latest session is shown dimmed. Drag a mode window by its header.
 Mini and bar are also available in a browser at `#mini` / `#bar`. The Linux/WSL build has no embedded
 window (would need cgo + WebKitGTK); use the browser.
 

@@ -509,7 +509,8 @@ func parseTokenCount(line []byte) (cxTokenCount, bool) {
 
 // runningWindow: an unfinished turn only counts as "running" while the history
 // was touched this recently (a crashed or killed agent leaves turns open forever).
-const runningWindow = 3 * time.Minute
+// Long enough to cover a slow tool call or a main session waiting on subagents.
+const runningWindow = 10 * time.Minute
 
 // codexTurnOpen reports whether the newest turn started but has not completed,
 // by looking at the tail of the rollout. The result is cached per file state.

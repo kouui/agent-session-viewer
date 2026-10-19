@@ -7,7 +7,6 @@ const Stats = (() => {
   const cfg = {
     page: +localStorage.getItem("av.stats.page") || 0,
     rotate: localStorage.getItem("av.stats.rotate") === "1",
-    activeMin: +localStorage.getItem("av.stats.activeMin") || 10,
     by: localStorage.getItem("av.stats.by") || "project",
   };
   const save = () => {
@@ -74,14 +73,13 @@ const Stats = (() => {
           `${money(today)} / ${money(yest)}` + (delta == null ? "" : ` (${delta > 0 ? "+" : ""}${delta.toFixed(0)}%)`)))];
     } },
     { id: "active", name: "Active sessions", render() {
-      const now = Date.now(), lim = cfg.activeMin * 60000;
-      let act = data.sessions.filter(s => s.running || now - s.mtime < lim).sort((a, b) => (b.running - a.running) || b.mtime - a.mtime);
+            let act = data.sessions.filter(s => s.running).sort((a, b) => (b.running - a.running) || b.mtime - a.mtime);
       const dimmed = !act.length;
       if (dimmed) act = data.sessions.slice().sort((a, b) => b.mtime - a.mtime).slice(0, 1);
       const rows = act.slice(0, 5).map(s => h("div", { class: "srow", title: `${s.project} · ${s.title}` },
         h("span", { class: "sdot " + (s.running ? "running" : dimmed ? "" : "recent"), title: s.running ? "running" : "recently active" }),
         h("span", { class: "badge " + s.kind }, s.kind), h("span", { class: "t" }, s.project + " · " + s.title), h("span", { class: "w" }, fmtRel(s.mtime))));
-      return [h("div", { class: "dimt" }, dimmed ? `none in the last ${cfg.activeMin} min — latest:` : `${act.length} active (last ${cfg.activeMin} min)`), ...rows];
+      return [h("div", { class: "dimt" }, dimmed ? `none running — latest:` : `${act.length} running`), ...rows];
     } },
     { id: "context", name: "Context", render() {
       const s = pickCurrent();

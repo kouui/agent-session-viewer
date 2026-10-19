@@ -12,12 +12,13 @@ const Bar = (() => {
   const save = () => { localStorage.setItem(LS + "projects", JSON.stringify(cfg.projects)); localStorage.setItem(LS + "n", cfg.n); };
 
   const el = h("div", { class: "barbody" });
-  let sessions = [], activeMin = 10, picking = false;
+  let sessions = [], picking = false;
   const cards = new Map(); // src|id -> { el, feedEl, meta, key, ... }
   const fetched = new Map(); // src|id -> "mtime|n" last fetched
 
   const sk = s => s.source + "|" + s.id;
-  const isActive = s => s.running || Date.now() - s.mtime < activeMin * 60000;
+  // active = the agent is working on it right now (last message unfinished); see Session.Running
+const isActive = s => s.running;
 
   /* ---------- feed lines ---------- */
   function lineEl(it) {
@@ -95,7 +96,7 @@ const Bar = (() => {
     if (none) shown = all.slice(0, 1);
     return h("div", { class: "proj" + (none ? " dim" : "") },
       h("div", { class: "phd" }, h("span", { class: "pn", title: all[0] ? all[0].project : key }, name),
-        h("span", { class: "w" }, none ? "idle" : shown.length + " active"),
+        h("span", { class: "w" }, none ? "idle" : shown.length + " running"),
         h("button", { class: "x", title: "remove from the bar", onclick: () => { cfg.projects = cfg.projects.filter(k => k !== key); save(); render(); } }, "✕")),
       shown.length ? shown.slice(0, 6).map(card) : h("div", { class: "dimt" }, "no sessions"));
   }
@@ -122,6 +123,6 @@ const Bar = (() => {
 
   return {
     el,
-    update(list, stats) { sessions = list; activeMin = stats.activeMin; render(); },
+    update(list) { sessions = list; render(); },
   };
 })();
