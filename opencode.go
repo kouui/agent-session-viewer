@@ -22,6 +22,8 @@ type OpenCode struct {
 	db    *sql.DB
 	stale bool
 	err   string
+
+	usage ocUsageCache
 }
 
 func NewOpenCode(dbPath string) *OpenCode { return &OpenCode{dbPath: dbPath} }

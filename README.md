@@ -39,6 +39,17 @@ Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second 
   see the WAL; run the Windows build instead (hence no `/mnt/c` auto-detect).
 - opencode session `mtime` = max(session.time_updated, newest message time_created).
 
+## Costs page
+`Costs` button (top bar, `#costs`): a range filter (24h / 7d / 30d / all), tiles (total cost, tokens,
+cache hit rate, sessions), a **by-project table** with a stacked bar per row split by agent · model
+(cost or tokens; click a row for the per-model breakdown, which also scopes the charts), and
+**cost per hour / tokens per hour** stacked-column charts (hour or day buckets) with a table view.
+Series colors are a validated 8-slot palette assigned by all-time volume, so filters never repaint them;
+models beyond 8 fold into "Other models". Tokens = in + out by default (`+ cache` toggles cache read/write).
+Backends implement `Usage()` (hourly rows per session+model); opencode updates it incrementally per
+message, codex by file offset from `token_count` deltas. Codex has no price, so it appears in token
+views only.
+
 ## Session header stats
 model (first → latest), in (new, uncached input only; total input = in + cache read + cache write), cache read, cache write, out,
 cache hit rate (cache read / total in), context length (prompt size of the latest request, plus

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agent-viewer</title>
+<link rel="stylesheet" href="cost.css">
 <style>
 :root {
   --bg:#13151a; --panel:#1a1d24; --panel2:#20242d; --line:#2b303b; --fg:#d7dae0; --dim:#8a91a0;
@@ -107,6 +108,7 @@ pre { margin:0; font:0.8571rem/1.45 var(--mono); white-space:pre-wrap; word-brea
 .reason .inner { color:var(--dim); white-space:pre-wrap; font-style:italic; }
 .fin { color:var(--dim); font-size:0.7857rem; font-family:var(--mono); padding:2px 10px 4px; }
 .files { font-family:var(--mono); font-size:0.8571rem; color:var(--dim); }
+[hidden] { display:none !important; }
 #ws.empty-ws { display:flex; align-items:center; justify-content:center; color:var(--dim); }
 </style>
 </head>
@@ -123,15 +125,19 @@ pre { margin:0; font:0.8571rem/1.45 var(--mono); white-space:pre-wrap; word-brea
   </aside>
   <main id="main">
     <div id="bar">
+      <button id="m-sessions" class="on">Sessions</button><button id="m-costs">Costs</button>
+      <span id="layoutctl" style="display:flex;gap:6px;align-items:center;margin-left:10px">
       <span>layout</span>
       <button data-layout="cols" title="panes side by side">▥ columns</button>
       <button data-layout="rows" title="panes stacked">▤ rows</button>
       <button data-layout="grid" title="grid">▦ grid</button>
+      </span>
       <span class="sp"></span>
       <span id="count"></span>
       <button id="fsm" title="smaller font">A−</button><button id="fsp" title="larger font">A+</button><button id="theme" title="theme: auto / light / dark"></button>
     </div>
     <div id="ws"></div>
+    <div id="cost" hidden></div>
   </main>
 </div>
 <script>
@@ -156,7 +162,7 @@ function fmtRel(t) {
   if (s < 86400 * 30) return Math.floor(s / 86400) + "d ago";
   return new Date(t).toLocaleDateString();
 }
-const fmtTok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0);
+const fmtTok = n => n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0);
 const skey = (src, id) => src + "\u0000" + id;
 
 /* =================== theme =================== */
@@ -518,6 +524,7 @@ document.querySelectorAll("#bar [data-layout]").forEach(b => b.addEventListener(
 }));
 
 function openSession(src, id, inNewPane) {
+  if (mode !== "sessions") setMode("sessions");
   // already open somewhere? just focus it
   for (const p of panes) for (const v of p.tabs) if (v.src === src && v.id === id) {
     p.activate(v); focusPane(p); afterChange(); return;
@@ -551,6 +558,19 @@ function restoreState() {
   if (focused) focusPane(focused);
 }
 
+/* =================== mode: sessions / costs =================== */
+let mode = "sessions";
+function setMode(m) {
+  mode = m;
+  $("#ws").hidden = m !== "sessions"; $("#cost").hidden = m !== "costs"; $("#layoutctl").hidden = m !== "sessions";
+  $("#count").hidden = m !== "sessions";
+  $("#m-sessions").classList.toggle("on", m === "sessions"); $("#m-costs").classList.toggle("on", m === "costs");
+  if (m === "costs") { location.hash = "costs"; Cost.show(); }
+  else { const a = activeView(); location.hash = a ? encodeURIComponent(a.src) + "/" + encodeURIComponent(a.id) : ""; }
+}
+$("#m-sessions").addEventListener("click", () => setMode("sessions"));
+$("#m-costs").addEventListener("click", () => setMode("costs"));
+
 /* =================== realtime =================== */
 let timer = null;
 function onChange(ev) {
@@ -558,6 +578,7 @@ function onChange(ev) {
   clearTimeout(timer);
   timer = setTimeout(() => {
     refreshProjects();
+    Cost.onChange();
     for (const v of allViews()) if (!d.src || d.src === v.src) v.markDirty();
   }, 250);
 }
@@ -574,9 +595,11 @@ setInterval(renderSidebar, 30000); // refresh relative times
   layoutPanes();
   await refreshProjects();
   const m = location.hash.slice(1).split("/");
-  if (m.length === 2 && m[0] && m[1]) openSession(decodeURIComponent(m[0]), decodeURIComponent(m[1]), false);
+  if (location.hash === "#costs") setMode("costs");
+  else if (m.length === 2 && m[0] && m[1]) openSession(decodeURIComponent(m[0]), decodeURIComponent(m[1]), false);
   connect();
 })();
 </script>
+<script src="cost.js"></script>
 </body>
 </html>

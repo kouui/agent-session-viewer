@@ -38,6 +38,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/projects", s.handleProjects)
 	mux.HandleFunc("/api/session", s.handleSession)
 	mux.HandleFunc("/api/stats", s.handleStats)
+	mux.HandleFunc("/api/usage", s.handleUsage)
 	mux.HandleFunc("/api/events", s.handleEvents)
 	return localOnly(mux)
 }
@@ -128,6 +129,50 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, st)
+}
+
+// UsageOut is one hourly usage row joined with its project and agent.
+type UsageOut struct {
+	Source      string   `json:"src"`
+	Kind        string   `json:"kind"`
+	Project     string   `json:"project"`
+	ProjectName string   `json:"projectName"`
+	Session     string   `json:"sid"`
+	Model       string   `json:"model"`
+	Hour        int64    `json:"hour"`
+	Input       int64    `json:"in"`
+	CacheRead   int64    `json:"cr"`
+	CacheWrite  int64    `json:"cw"`
+	Output      int64    `json:"out"`
+	Cost        *float64 `json:"cost,omitempty"`
+}
+
+// handleUsage returns all-time hourly usage; the browser filters ranges itself.
+func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
+	out := []UsageOut{}
+	for _, src := range s.sources {
+		rows, err := src.B.Usage()
+		if err != nil {
+			http.Error(w, src.Label+": "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		sessions, _ := src.B.Sessions()
+		proj := map[string]Session{}
+		for _, ss := range sessions {
+			proj[ss.ID] = ss
+		}
+		for _, u := range rows {
+			ss, ok := proj[u.Session]
+			key, name := ss.ProjectKey, ss.ProjectName
+			if !ok || key == "" {
+				key, name = "(unknown)", "(unknown)"
+			}
+			out = append(out, UsageOut{Source: src.Label, Kind: src.B.Kind(), Project: key, ProjectName: name,
+				Session: u.Session, Model: u.Model, Hour: u.Hour, Input: u.Usage.Input, CacheRead: u.Usage.CacheRead,
+				CacheWrite: u.Usage.CacheWrite, Output: u.Usage.Output, Cost: u.Cost})
+		}
+	}
+	writeJSON(w, map[string]any{"rows": out})
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {

@@ -50,6 +50,16 @@ type Stats struct {
 	LastModel     string `json:"lastModel,omitempty"`
 }
 
+// UsageRow is token usage and cost of one session+model within one UTC hour.
+// Cost is nil when the backend does not record price.
+type UsageRow struct {
+	Session string   `json:"sid"`
+	Model   string   `json:"model"`
+	Hour    int64    `json:"hour"` // unix ms, start of the UTC hour
+	Usage   Usage    `json:"usage"`
+	Cost    *float64 `json:"cost,omitempty"`
+}
+
 // Part kinds.
 const (
 	KindText      = "text"
@@ -109,6 +119,8 @@ type Backend interface {
 	Sessions() ([]Session, error)
 	Delta(sessionID, cursor string) (*Delta, error)
 	Stats(sessionID string) (*Stats, error)
+	// Usage returns all-time hourly usage rows; backends cache and update incrementally.
+	Usage() ([]UsageRow, error)
 	// Fingerprint is a cheap change detector (file stats only, no DB reads).
 	Fingerprint() string
 	// Status reports degraded state: stale = recent writes not visible.

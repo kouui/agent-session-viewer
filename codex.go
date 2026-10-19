@@ -26,6 +26,7 @@ type Codex struct {
 	lastScan time.Time
 	fp       string
 	roots    map[string]string // gitRoot cache
+	usage    cxUsageCache
 }
 
 type cxFile struct {
@@ -292,29 +293,9 @@ func (c *Codex) Stats(id string) (*Stats, error) {
 		f.statOff += int64(len(line))
 		switch {
 		case bytes.Contains(line, []byte(`"token_count"`)):
-			var l struct {
-				Payload struct {
-					Type string `json:"type"`
-					Info *struct {
-						Total struct {
-							Input      int64 `json:"input_tokens"`
-							Cached     int64 `json:"cached_input_tokens"`
-							CacheWrite int64 `json:"cache_write_input_tokens"`
-							Output     int64 `json:"output_tokens"`
-							Reasoning  int64 `json:"reasoning_output_tokens"`
-						} `json:"total_token_usage"`
-						Last struct {
-							Input int64 `json:"input_tokens"`
-						} `json:"last_token_usage"`
-						Window int64 `json:"model_context_window"`
-					} `json:"info"`
-				} `json:"payload"`
-			}
-			if json.Unmarshal(line, &l) == nil && l.Payload.Type == "token_count" && l.Payload.Info != nil {
-				t := l.Payload.Info.Total
-				f.stats.ContextUsed, f.stats.ContextWindow = l.Payload.Info.Last.Input, l.Payload.Info.Window
-				f.stats.Usage = Usage{Input: max(0, t.Input-t.Cached-t.CacheWrite), CacheRead: t.Cached,
-					CacheWrite: t.CacheWrite, Output: t.Output, Reasoning: t.Reasoning}
+			if tc, ok := parseTokenCount(line); ok {
+				f.stats.ContextUsed, f.stats.ContextWindow = tc.Last, tc.Window
+				f.stats.Usage = tc.Total.usage()
 			}
 		case bytes.Contains(line, []byte(`"turn_context"`)):
 			var l struct {
@@ -467,4 +448,57 @@ func codexOutput(raw json.RawMessage) string {
 		return *wrapped.Output
 	}
 	return s
+}
+
+// cxTotals is codex's cumulative token accounting. Its input_tokens INCLUDES
+// the cached part, unlike the normalized Usage (where Input is new tokens only).
+type cxTotals struct {
+	Input      int64 `json:"input_tokens"`
+	Cached     int64 `json:"cached_input_tokens"`
+	CacheWrite int64 `json:"cache_write_input_tokens"`
+	Output     int64 `json:"output_tokens"`
+	Reasoning  int64 `json:"reasoning_output_tokens"`
+}
+
+func (t cxTotals) usage() Usage {
+	return Usage{Input: max(0, t.Input-t.Cached-t.CacheWrite), CacheRead: t.Cached,
+		CacheWrite: t.CacheWrite, Output: t.Output, Reasoning: t.Reasoning}
+}
+
+// sub returns t - o, or t itself when the counter went backwards (new baseline).
+func (t cxTotals) sub(o cxTotals) cxTotals {
+	if t.Input < o.Input || t.Output < o.Output {
+		return t
+	}
+	return cxTotals{t.Input - o.Input, t.Cached - o.Cached, t.CacheWrite - o.CacheWrite, t.Output - o.Output, t.Reasoning - o.Reasoning}
+}
+
+type cxTokenCount struct {
+	Total  cxTotals
+	Last   int64 // prompt size of the latest request (includes cached)
+	Window int64
+	Time   int64 // unix ms of the event
+}
+
+// parseTokenCount decodes an event_msg/token_count line; ok=false when the line
+// is not a token_count event or carries no info yet.
+func parseTokenCount(line []byte) (cxTokenCount, bool) {
+	var l struct {
+		Timestamp string `json:"timestamp"`
+		Payload   struct {
+			Type string `json:"type"`
+			Info *struct {
+				Total cxTotals `json:"total_token_usage"`
+				Last  struct {
+					Input int64 `json:"input_tokens"`
+				} `json:"last_token_usage"`
+				Window int64 `json:"model_context_window"`
+			} `json:"info"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(line, &l) != nil || l.Payload.Type != "token_count" || l.Payload.Info == nil {
+		return cxTokenCount{}, false
+	}
+	i := l.Payload.Info
+	return cxTokenCount{Total: i.Total, Last: i.Last.Input, Window: i.Window, Time: parseTS(l.Timestamp)}, true
 }
