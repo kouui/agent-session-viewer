@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -173,7 +174,9 @@ ORDER BY time_created `+q.order+` LIMIT 1`, id).Scan(q.dst)
 AND json_extract(data,'$.role') = 'assistant' AND COALESCE(json_extract(data,'$.tokens.input'),0) + COALESCE(json_extract(data,'$.tokens.cache.read'),0) > 0
 ORDER BY time_created DESC LIMIT 1`, id).Scan(&last) == nil {
 		var m struct {
-			Tokens struct {
+			ProviderID string `json:"providerID"`
+			ModelID    string `json:"modelID"`
+			Tokens     struct {
 				Input int64 `json:"input"`
 				Cache struct {
 					Read  int64 `json:"read"`
@@ -183,6 +186,7 @@ ORDER BY time_created DESC LIMIT 1`, id).Scan(&last) == nil {
 		}
 		if json.Unmarshal([]byte(last), &m) == nil {
 			st.ContextUsed = m.Tokens.Input + m.Tokens.Cache.Read + m.Tokens.Cache.Write
+			st.ContextWindow = contextWindow(m.ProviderID, m.ModelID)
 		}
 	}
 	return st, nil
@@ -356,4 +360,59 @@ WHERE session_id = ? AND time_updated >= ? ORDER BY id`, id, since)
 	}
 	d.Cursor = strconv.FormatInt(cur, 10)
 	return d, rows.Err()
+}
+
+// ---- context window lookup ---------------------------------------------------
+// opencode does not store model limits in the DB, but caches the models.dev
+// catalog at <cache>/opencode/models.json.
+
+var (
+	mcMu    sync.Mutex
+	mcPath  string
+	mcMTime time.Time
+	mcData  map[string]map[string]int64 // provider -> model -> context window
+)
+
+func modelsCachePath() string {
+	if x := os.Getenv("XDG_CACHE_HOME"); x != "" {
+		return filepath.Join(x, "opencode", "models.json")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cache", "opencode", "models.json")
+}
+
+// contextWindow returns 0 when the model is unknown.
+func contextWindow(provider, model string) int64 {
+	mcMu.Lock()
+	defer mcMu.Unlock()
+	p := modelsCachePath()
+	st, err := os.Stat(p)
+	if err != nil {
+		return 0
+	}
+	if mcData == nil || mcPath != p || !st.ModTime().Equal(mcMTime) {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return 0
+		}
+		var raw map[string]struct {
+			Models map[string]struct {
+				Limit struct {
+					Context int64 `json:"context"`
+				} `json:"limit"`
+			} `json:"models"`
+		}
+		if json.Unmarshal(b, &raw) != nil {
+			return 0
+		}
+		mcData = map[string]map[string]int64{}
+		for pid, pv := range raw {
+			mcData[pid] = map[string]int64{}
+			for mid, mv := range pv.Models {
+				mcData[pid][mid] = mv.Limit.Context
+			}
+		}
+		mcPath, mcMTime = p, st.ModTime()
+	}
+	return mcData[provider][model]
 }

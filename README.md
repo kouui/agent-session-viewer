@@ -43,7 +43,7 @@ Realtime: the server polls file stats (db/wal mtime, rollout dir) once a second 
 model (first → latest), in (new, uncached input only; total input = in + cache read + cache write), cache read, cache write, out,
 cache hit rate (cache read / total in), context length (prompt size of the latest request, plus
 window and % when the agent records it), price. Backends fill `Stats` in `model.go`.
-- opencode: session-row totals + recorded cost; context window is not recorded (shown without %).
+- opencode: session-row totals + recorded cost; context window comes from opencode's cached models.json catalog (shown without % if the model is not in it).
 - codex: latest cumulative `token_count` + `model_context_window`; price is not recorded (`n/a`).
 
 ## TODO
