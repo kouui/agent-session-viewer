@@ -15,6 +15,7 @@ const Bar = (() => {
   const applyFs = () => el.style.setProperty("--bfs", cfg.fs + "px");
 
   const el = h("div", { class: "barbody" });
+  const projsEl = h("div", { class: "projs" }); // persistent: keeps its scroll position across updates
   let sessions = [], picking = false;
   const cards = new Map(); // src|id -> { el, feedEl, meta, key, ... }
   const fetched = new Map(); // src|id -> "mtime|n" last fetched
@@ -35,27 +36,47 @@ const isActive = s => s.running;
     e.replaceChildren(h("span", { class: "fi" }, icon),
       it.kind === "tool" ? h("span", { class: "ft" }, h("b", {}, it.tool || "tool"), it.text ? " " + it.text : "") : h("span", { class: "ft" }, it.text));
   }
+  // The feed has a fixed height of N slots (see .feed in stats.css), so a card never changes
+  // size. Lines are keyed by id: new lines fade in at the bottom, lines that drop out of the
+  // newest N leave a ghost that fades out, and the surviving lines slide up one slot (FLIP).
   function reconcile(feedEl, items) {
-    const live = new Map();
-    for (const c of [...feedEl.children]) if (!c.classList.contains("out")) live.set(c.dataset.id, c);
+    const first = !feedEl.dataset.init;
+    feedEl.dataset.init = "1";
+    const live = new Map(), top = new Map();
+    for (const c of [...feedEl.children]) if (!c.classList.contains("ghost")) { live.set(c.dataset.id, c); top.set(c.dataset.id, c.offsetTop); }
     const want = new Set(items.map(i => i.id));
     for (const [id, node] of live) {
       if (want.has(id)) continue;
-      node.classList.add("out");
-      setTimeout(() => node.remove(), 450);
+      if (!first) { // ghost at the old position, out of flow
+        const g = node.cloneNode(true);
+        g.classList.add("ghost");
+        g.classList.remove("in");
+        g.style.top = node.offsetTop + "px";
+        feedEl.append(g);
+        setTimeout(() => g.remove(), 450);
+      }
+      node.remove();
+      live.delete(id);
     }
-    const first = !feedEl.dataset.init;
-    feedEl.dataset.init = "1";
     let prev = null;
+    const moved = [];
     for (const it of items) {
       let node = live.get(it.id);
-      if (node) fillLine(node, it);
+      if (node) { fillLine(node, it); moved.push([node, top.get(it.id)]); }
       else { node = lineEl(it); if (!first) node.classList.add("in"); }
       const pos = prev ? prev.nextSibling : feedEl.firstChild;
       if (pos !== node) feedEl.insertBefore(node, pos);
       prev = node;
     }
-    feedEl.scrollTop = feedEl.scrollHeight;
+    if (first) return;
+    for (const [node, was] of moved) {
+      const dy = was - node.offsetTop;
+      if (!dy) continue;
+      node.style.transition = "none"; node.style.transform = `translateY(${dy}px)`;
+      node.getBoundingClientRect(); // commit the start position
+      node.style.transition = "transform .3s ease"; node.style.transform = "";
+      setTimeout(() => { node.style.transition = ""; }, 340);
+    }
   }
 
   /* ---------- session cards ---------- */
@@ -68,6 +89,7 @@ const isActive = s => s.running;
       cards.set(k, c);
     }
     c.el.classList.toggle("idle", !isActive(s));
+    c.feedEl.style.setProperty("--n", cfg.n);
     c.head.replaceChildren(h("span", { class: "sdot " + (s.running ? "running" : isActive(s) ? "recent" : "") }), h("span", { class: "badge " + s.kind }, s.kind),
       h("span", { class: "t", title: s.title }, s.title), h("span", { class: "w" }, fmtRel(s.mtime)));
     const key = s.mtime + "|" + cfg.n;
@@ -119,9 +141,10 @@ const isActive = s => s.running;
       h("div", { class: "bbar" }, h("span", { class: "ttl" }, "Projects"), h("span", { class: "sp" }),
         h("button", { class: picking ? "on" : "", title: "add a project", onclick: () => { picking = !picking; render(); } }, "+ project")),
       h("div", { class: "bbar" }, stepper, h("span", { class: "sp" }), h("span", { class: "stp" }, fsBtn("A−", "smaller text", -2), fsBtn("A+", "larger text", 2))));
-    const body = h("div", { class: "projs" },
-      cfg.projects.length ? cfg.projects.map(projectEl) : h("div", { class: "dimt pad" }, sessions.length ? "Press “+ project” to follow a project." : "loading…"));
-    el.replaceChildren(...[bar, picking ? picker() : null, body].filter(Boolean));
+    const top = projsEl.scrollTop;
+    projsEl.replaceChildren(...(cfg.projects.length ? cfg.projects.map(projectEl) : [h("div", { class: "dimt pad" }, sessions.length ? "Press “+ project” to follow a project." : "loading…")]));
+    el.replaceChildren(...[bar, picking ? picker() : null, projsEl].filter(Boolean));
+    projsEl.scrollTop = top;
     // drop cards that are no longer displayed so stale feeds do not pile up
     const live = new Set([...el.querySelectorAll(".scard")]);
     for (const [k, c] of cards) if (!live.has(c.el)) { cards.delete(k); fetched.delete(k); }
