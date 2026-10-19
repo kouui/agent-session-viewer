@@ -111,7 +111,7 @@ window and % when the agent records it), price. Backends fill `Stats` in `model.
 
 ## TODO
 - Claude Code support (a new `Backend` for `~/.claude/projects/**/*.jsonl`).
-- Clicking a subagent call jumps to (opens) that subagent session in another tab.
+- Subagent jump for Claude Code (opencode is done: a `task` call has an `open ↗` button; codex: see issue #1).
 
 ## Releases
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which builds and attaches to a GitHub release:

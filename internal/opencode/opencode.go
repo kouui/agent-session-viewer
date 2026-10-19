@@ -254,7 +254,11 @@ type ocPart struct {
 		Output json.RawMessage `json:"output"`
 		Error  string          `json:"error"`
 		Title  string          `json:"title"`
-		Time   struct {
+		// task (subagent) calls record the child session here
+		Metadata struct {
+			SessionID string `json:"sessionId"`
+		} `json:"metadata"`
+		Time struct {
 			Start int64 `json:"start"`
 			End   int64 `json:"end"`
 		} `json:"time"`
@@ -296,6 +300,9 @@ func convertOCPart(id, messageID, data string) (model.Part, bool) {
 		p.Kind, p.Tool = model.KindTool, x.Tool
 		if s := x.State; s != nil {
 			p.Status, p.Title, p.Input, p.Error = s.Status, s.Title, s.Input, s.Error
+			if x.Tool == "task" && s.Metadata.SessionID != "" {
+				p.Link = &model.Link{SessionID: s.Metadata.SessionID}
+			}
 			if len(s.Output) > 0 {
 				var str string
 				if json.Unmarshal(s.Output, &str) == nil {

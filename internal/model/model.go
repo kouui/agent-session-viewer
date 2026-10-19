@@ -92,6 +92,13 @@ type Part struct {
 	Usage      *Usage          `json:"usage,omitempty"`
 	Cost       float64         `json:"cost,omitempty"`
 	Raw        json.RawMessage `json:"raw,omitempty"`
+	// Link points at another session of the same source (a subagent run launched by this tool call).
+	Link *Link `json:"link,omitempty"`
+}
+
+// Link references a session of the same source by id.
+type Link struct {
+	SessionID string `json:"sessionId"`
 }
 
 // Message is a turn entry. An empty Role means "parts update only".

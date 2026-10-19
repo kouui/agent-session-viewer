@@ -213,7 +213,7 @@ class View {
     const prev = this.partData.get(p.id);
     const data = prev ? Object.assign(prev, p) : p;
     this.partData.set(p.id, data);
-    const el = renderPart(data);
+    const el = renderPart(data, this.src);
     if (old) {
       const od = old.querySelector("details"), nd = el.querySelector("details");
       if (od && nd && od.open) nd.open = true;
@@ -268,7 +268,7 @@ function toolHint(i) {
   const v = i.command || i.cmd || i.filePath || i.path || i.pattern || i.url || i.query || i.description || "";
   return String(Array.isArray(v) ? v.join(" ") : v).replace(/\s+/g, " ").slice(0, 120);
 }
-function renderPart(p) {
+function renderPart(p, src) {
   switch (p.kind) {
     case "text":
       return h("div", { class: "part text" }, h("div", { class: "body" }, p.text || ""));
@@ -284,6 +284,9 @@ function renderPart(p) {
       return h("div", { class: "part tool" }, h("details", { class: "fold", open: p.status === "running" },
         h("summary", {}, h("span", { class: "name" }, p.tool || "tool"), h("span", { class: "ttl" }, p.title || toolHint(p.input)),
           h("span", { class: "st " + (p.status || "") }, p.status || "?"),
+          p.link ? h("button", { class: "jump", title: "open the subagent session (shift/ctrl: new pane)", onclick: e => {
+            e.preventDefault(); e.stopPropagation(); openSession(src, p.link.sessionId, e.shiftKey || e.ctrlKey || e.metaKey);
+          } }, "open ↗") : "",
           p.durationMs ? (p.durationMs / 1000).toFixed(1) + "s" : ""), inner));
     }
     case "patch":

@@ -102,3 +102,4 @@ pre { margin:0; font:0.8571rem/1.45 var(--mono); white-space:pre-wrap; word-brea
 .files { font-family:var(--mono); font-size:0.8571rem; color:var(--dim); }
 [hidden] { display:none !important; }
 #ws.empty-ws { display:flex; align-items:center; justify-content:center; color:var(--dim); }
+.part.tool .jump { margin-left:auto; padding:0 6px; font-size:.85em; }
