@@ -6,6 +6,8 @@ panes / tabs.
 
 Supported: **opencode** (`opencode.db`, SQLite) and **codex** (`~/.codex/sessions/**/rollout-*.jsonl`).
 
+![Session view: projects on the left, split panes with per-session header stats](figures/session-page.png)
+
 ```
 make linux      # dist/agent-viewer-linux        (Linux / WSL)
 make windows    # dist/agent-viewer-windows.exe  (Windows, console)
@@ -58,6 +60,20 @@ size and position (`window.json`):
   running now, with model and context %) with the latest N messages (user prompts, assistant text, one-line
   tool calls; default 4, adjustable). New messages slide in, older ones fade out.
 
+Mini pages (Today, Burn rate, Active sessions, Context, Top spenders):
+
+<p>
+  <img src="figures/mini-mode-today.png" width="250" alt="Mini: Today">
+  <img src="figures/mini-mode-brun-rate.png" width="250" alt="Mini: Burn rate">
+  <img src="figures/mini-mode-active-sessions.png" width="250" alt="Mini: Active sessions">
+  <img src="figures/mini-mode-context.png" width="250" alt="Mini: Context">
+  <img src="figures/mini-mode-top-spenders.png" width="250" alt="Mini: Top spenders">
+</p>
+
+Bar mode (stats on top, followed projects with their running sessions and latest messages):
+
+<img src="figures/bar-mode.png" width="320" alt="Bar mode">
+
 *Running* (= active) is read from the last message: opencode - newest assistant message unfinished; codex - a started turn
 without completion; and the history was touched in the last 10 min (a crashed agent leaves turns open). Only running
 sessions are listed under a project; with none running, its latest session is shown dimmed. Drag a mode window by its header.
@@ -65,6 +81,9 @@ Mini and bar are also available in a browser at `#mini` / `#bar`. The Linux/WSL 
 window (would need cgo + WebKitGTK); use the browser.
 
 ## Costs page
+
+![Costs page: per-project table and per-hour charts](figures/cost-page.png)
+
 `Costs` button (top bar, `#costs`): a range filter (24h / 7d / 30d / all), tiles (total cost, tokens,
 cache hit rate, sessions), a **by-project table** with a stacked bar per row split by agent · model
 (cost or tokens; click a row for the per-model breakdown, which also scopes the charts), and
