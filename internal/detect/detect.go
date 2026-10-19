@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"agent-viewer/internal/claude"
 	"agent-viewer/internal/codex"
 	"agent-viewer/internal/model"
 	"agent-viewer/internal/opencode"
@@ -36,6 +37,12 @@ func Sources(extra []string) []*model.Source {
 	}
 	if home != "" {
 		cands = append(cands, filepath.Join(home, ".codex"))
+	}
+	if cc := os.Getenv("CLAUDE_CONFIG_DIR"); cc != "" {
+		cands = append(cands, cc)
+	}
+	if home != "" {
+		cands = append(cands, filepath.Join(home, ".claude"))
 	}
 
 	seen := map[string]bool{}
@@ -75,6 +82,10 @@ func sniff(p string) model.Backend {
 	}
 	if s, err := os.Stat(filepath.Join(p, "opencode.db")); err == nil && !s.IsDir() {
 		return opencode.New(filepath.Join(p, "opencode.db"))
+	}
+	// Claude Code also has a sessions/ dir, so test its projects/ dir first
+	if s, err := os.Stat(filepath.Join(p, "projects")); err == nil && s.IsDir() {
+		return claude.New(p)
 	}
 	for _, sub := range []string{"sessions", "archived_sessions"} {
 		if s, err := os.Stat(filepath.Join(p, sub)); err == nil && s.IsDir() {

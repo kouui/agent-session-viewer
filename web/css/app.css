@@ -3,7 +3,7 @@
   --accent:#6aa3ff; --ok:#5ec27a; --warn:#e3b341; --err:#f0686b; --user:#2a3a55; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --hover:#222733; --hover2:#272c37; --btnhov:#2a303c; --sel:#25324a; --userline:#3a4f73; --wsbg:#0e1014;
   --userrole:#9ec1ff; --inset:var(--inset); --inset2:var(--inset2);
-  --okbg:#1d3a28; --warnbg:#3e3416; --errbg:#42201f; --xhov:#3a2326; --oc:#7fd6c2; --ocl:#2f5a50; --cx:#e6a8ff; --cxl:#5a3a66;
+  --okbg:#1d3a28; --warnbg:#3e3416; --errbg:#42201f; --xhov:#3a2326; --oc:#7fd6c2; --ocl:#2f5a50; --cx:#e6a8ff; --cxl:#5a3a66; --cc:#f0a066; --ccl:#6a4a2e;
   color-scheme:dark;
 }
 :root[data-theme="light"] {
@@ -11,7 +11,7 @@
   --accent:#1f6feb; --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --user:#e3eeff;
   --hover:#f0f3f8; --hover2:#e3e7ee; --btnhov:#e3e7ee; --sel:#dbe8ff; --userline:#aac4f0; --wsbg:#dfe3ea;
   --userrole:#1f5bc4; --inset:rgba(0,0,0,.045); --inset2:rgba(0,0,0,.06);
-  --okbg:#dafbe1; --warnbg:#fff1c2; --errbg:#ffe0e0; --xhov:#ffe0e0; --oc:#0f766e; --ocl:#8fd0c4; --cx:#9333ea; --cxl:#d9b5f5;
+  --okbg:#dafbe1; --warnbg:#fff1c2; --errbg:#ffe0e0; --xhov:#ffe0e0; --oc:#0f766e; --ocl:#8fd0c4; --cx:#9333ea; --cxl:#d9b5f5; --cc:#b45309; --ccl:#e8c39a;
   color-scheme:light;
 }
 * { box-sizing:border-box; }
@@ -39,6 +39,7 @@ button.on { background:var(--sel); border-color:var(--userline); }
 .badge { font-size:0.7143rem; padding:0 5px; border-radius:8px; border:1px solid var(--line); color:var(--dim); white-space:nowrap; }
 .badge.opencode { color:var(--oc); border-color:var(--ocl); }
 .badge.codex { color:var(--cx); border-color:var(--cxl); }
+.badge.claude { color:var(--cc); border-color:var(--ccl); }
 .sess { padding:6px 12px 6px 28px; cursor:pointer; border-bottom:1px solid var(--line); position:relative; }
 .sess:hover { background:var(--hover); }
 .sess.sel { background:var(--sel); }
@@ -103,3 +104,8 @@ pre { margin:0; font:0.8571rem/1.45 var(--mono); white-space:pre-wrap; word-brea
 [hidden] { display:none !important; }
 #ws.empty-ws { display:flex; align-items:center; justify-content:center; color:var(--dim); }
 .part.tool .jump { margin-left:auto; padding:0 6px; font-size:.85em; }
+#submode { display:flex; gap:4px; align-items:center; color:var(--dim); font-size:.8571rem; margin-top:6px; }
+#submode button { padding:0 7px; } #submode button.on { background:var(--sel); border-color:var(--userline); }
+.sess.sub2 { padding-left:60px; }
+.sfold { padding:3px 12px 3px 44px; cursor:pointer; color:var(--dim); font-size:.8571rem; border-bottom:1px solid var(--line); user-select:none; }
+.sfold.l2 { padding-left:60px; } .sfold:hover { background:var(--hover); color:var(--fg); }

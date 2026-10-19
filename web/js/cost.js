@@ -42,7 +42,7 @@ const Cost = (() => {
 
   function rangeRows() {
     const since = RANGES[st.range] ? Date.now() - RANGES[st.range] : 0;
-    return since ? rows.filter(r => r.hour + HOUR > since) : rows;
+    return rows.filter(r => Agents.on(r.kind) && (!since || r.hour + HOUR > since));
   }
 
   /* ---------- formatting ---------- */
@@ -114,6 +114,8 @@ const Cost = (() => {
     wrap.append(h("div", { class: "cfilters" },
       h("div", { class: "grp" }, h("span", {}, "range"), seg([["24h", "24h"], ["7d", "7 days"], ["30d", "30 days"], ["all", "All"]], st.range, v => st.range = v)),
       h("div", { class: "grp" }, h("span", {}, "chart bucket"), seg([["auto", "auto"], ["hour", "hour"], ["day", "day"]], st.bucket, v => st.bucket = v)),
+      rows ? h("div", { class: "grp" }, h("span", {}, "agents"), h("div", { class: "seg" }, [...new Set(rows.map(r => r.kind))].sort().map(k =>
+        btn(k, Agents.on(k), () => { Agents.toggle(k); render(); }, "include " + k + " in the tables and charts")))) : null,
       h("div", { class: "grp" }, h("span", {}, "tokens"), seg([["io", "in + out", "new input + output"], ["all", "+ cache", "also count cache read/write"]], st.tokens, v => st.tokens = v))));
     body = h("div", { class: "cbody" });
     wrap.append(body);
@@ -286,7 +288,7 @@ const Cost = (() => {
     const totalOf = b => used.reduce((a, s) => a + val(b, s), 0);
     const max = Math.max(0, ...buckets.map(totalOf));
     if (!hasData || !(max > 0)) {
-      card.append(h("div", { class: "none" }, metric === "cost" ? "No priced usage in this range/scope (codex does not record price — see tokens)." : "No usage in this range/scope."));
+      card.append(h("div", { class: "none" }, metric === "cost" ? "No priced usage in this range/scope (codex and claude do not record price — see tokens)." : "No usage in this range/scope."));
       return card;
     }
     if (showTbl) {

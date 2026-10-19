@@ -4,7 +4,8 @@ Read-only, realtime web viewer for coding-agent session history. Sessions are gr
 project and sorted by last modified. Multiple sessions can be watched at once in split
 panes / tabs.
 
-Supported: **opencode** (`opencode.db`, SQLite) and **codex** (`~/.codex/sessions/**/rollout-*.jsonl`).
+Supported: **opencode** (`opencode.db`, SQLite), **codex** (`~/.codex/sessions/**/rollout-*.jsonl`) and
+**Claude Code** (`~/.claude/projects/**/*.jsonl`, or `$CLAUDE_CONFIG_DIR`).
 
 ![Session view: projects on the left, split panes with per-session header stats](figures/session-page.png)
 
@@ -109,9 +110,23 @@ window and % when the agent records it), price. Backends fill `Stats` in `model.
 - opencode: session-row totals + recorded cost; context window comes from opencode's cached models.json catalog (shown without % if the model is not in it).
 - codex: latest cumulative `token_count` + `model_context_window`; price is not recorded (`n/a`).
 
+## Claude Code
+Read from `~/.claude/projects/<project>/<session>.jsonl` (Windows: `%USERPROFILE%\.claude`). Tokens only: Claude Code
+records no price, so cost shows `n/a` and Costs charts use tokens. No context percentage (the window size is not in the
+logs); the header shows used tokens. Messages that were copied into resumed/forked sessions are counted once in the
+Costs page. The first Costs load indexes all transcripts in the background (6.5 GB took about 20 s); it fills in as it goes.
+Which agents count in the Costs charts and the mini/bar stats is a toggle (`agents` chips on the Costs page, saved).
+
+## Subagents
+- Sidebar: `subagents  nested | flat`. *nested* (default) folds subagents under their parent session and bundles the agents of
+  one Claude workflow run into a `⚙ workflow-name · N agents` row (running ones are counted); *flat* lists everything by time.
+  Searching always shows sessions flat.
+- Jump: a subagent tool call has an `open ↗` button that opens the child session in a tab (shift/ctrl-click: new pane);
+  a Claude `Workflow` call has `agents ↗`, which expands that workflow's agents in the sidebar. Works for opencode (`task`)
+  and Claude Code (`Agent`, `SendMessage`, `Workflow`). codex: see issue #1.
+
 ## TODO
-- Claude Code support (a new `Backend` for `~/.claude/projects/**/*.jsonl`).
-- Subagent jump for Claude Code (opencode is done: a `task` call has an `open ↗` button; codex: see issue #1).
+- codex subagent jump (issue #1).
 
 ## Releases
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which builds and attaches to a GitHub release:

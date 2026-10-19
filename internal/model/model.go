@@ -25,6 +25,9 @@ type Session struct {
 	Archived    bool   `json:"archived,omitempty"`
 	// Running: the agent is working on this session right now (heuristic, see backends).
 	Running bool `json:"running,omitempty"`
+	// Group/GroupName bundle sibling subagents of one parent (e.g. the agents of one Claude workflow run).
+	Group     string `json:"group,omitempty"`
+	GroupName string `json:"groupName,omitempty"`
 
 	ProjectKey  string `json:"-"` // grouping key (normalized path / id)
 	ProjectName string `json:"-"`
@@ -96,9 +99,11 @@ type Part struct {
 	Link *Link `json:"link,omitempty"`
 }
 
-// Link references a session of the same source by id.
+// Link references a session (or a session group) of the same source.
 type Link struct {
-	SessionID string `json:"sessionId"`
+	SessionID string `json:"sessionId,omitempty"`
+	// Group instead of SessionID: a bundle of subagent sessions (a workflow run) launched by this call.
+	Group string `json:"group,omitempty"`
 }
 
 // Message is a turn entry. An empty Role means "parts update only".

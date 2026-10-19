@@ -23,7 +23,7 @@ const Stats = (() => {
     busy = true;
     try {
       const [u, p] = await Promise.all([fetch("/api/usage").then(r => r.json()), fetch("/api/projects").then(r => r.json())]);
-      data = { rows: u.rows, sessions: p.projects.flatMap(pr => pr.sessions.map(s => ({ ...s, project: pr.name, projectKey: pr.key, projectMTime: pr.mtime }))) };
+      data = { all: u.rows, rows: u.rows.filter(r => Agents.on(r.kind)), sessions: p.projects.flatMap(pr => pr.sessions.map(s => ({ ...s, project: pr.name, projectKey: pr.key, projectMTime: pr.mtime }))) };
       const cur = pickCurrent();
       const key = cur ? cur.source + cur.id + cur.mtime : "";
       if (cur && key !== ctxKey) {
@@ -115,6 +115,7 @@ const Stats = (() => {
   function draw() {
     if (!root) return;
     const native = typeof window.avSetMode === "function";
+    if (data) data.rows = data.all.filter(r => Agents.on(r.kind)); // the Costs page may have changed the agent filter
     const page = PAGES[cfg.page % PAGES.length];
     const nav = h("div", { class: "nav" },
       h("button", { title: "previous page", onclick: () => go(-1) }, "‹"),

@@ -22,6 +22,16 @@ function fmtRel(t) {
 const fmtTok = n => n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0);
 const skey = (src, id) => src + "\u0000" + id;
 
+// Which agents count in usage plots (Costs page, mini/bar stats). Persisted; default: all on.
+const Agents = {
+  off: new Set(JSON.parse(localStorage.getItem("av.agents.off") || "[]")),
+  on(kind) { return !this.off.has(kind); },
+  toggle(kind) {
+    if (this.off.has(kind)) this.off.delete(kind); else this.off.add(kind);
+    localStorage.setItem("av.agents.off", JSON.stringify([...this.off]));
+  },
+};
+
 /* =================== theme =================== */
 const THEMES = ["auto", "light", "dark"], ICON = { auto: "◐ auto", light: "☀ day", dark: "☾ night" };
 let theme = localStorage.getItem("av.theme") || "auto";
@@ -70,6 +80,82 @@ async function refreshProjects() {
 
 /* =================== sidebar =================== */
 function openKeys() { return new Set(allViews().map(v => skey(v.src, v.id))); }
+// subagent display: "nested" folds subagents (and workflow runs) under their parent session, "flat" lists everything by time
+let subMode = localStorage.getItem("av.submode") || "nested";
+const subOpen = new Set(JSON.parse(localStorage.getItem("av.subopen") || "[]"));
+function toggleSub(k) {
+  subOpen.has(k) ? subOpen.delete(k) : subOpen.add(k);
+  localStorage.setItem("av.subopen", JSON.stringify([...subOpen]));
+  renderSidebar();
+}
+function sessRow(s, cls, opened, act) {
+  const k = skey(s.source, s.id);
+  return h("div", {
+    class: "sess" + (act && skey(act.src, act.id) === k ? " sel" : "") + (opened.has(k) ? " open" : "") + cls,
+    title: s.directory,
+    onclick: e => openSession(s.source, s.id, e.ctrlKey || e.shiftKey || e.metaKey),
+  },
+    h("div", { class: "t" }, (s.running ? "● " : "") + (s.title || "(untitled)")),
+    h("div", { class: "m" }, h("span", { class: "badge " + s.kind }, s.kind), fmtRel(s.mtime),
+      s.parentId ? h("span", { class: "badge" }, "sub") : null,
+      s.archived ? h("span", { class: "badge" }, "archived") : null),
+    h("button", { class: "split", title: "open in new pane", onclick: e => { e.stopPropagation(); openSession(s.source, s.id, true); } }, "split"));
+}
+function appendNested(box, ss, opened, act) {
+  const ids = new Map(ss.map(s => [skey(s.source, s.id), s]));
+  const rootOf = s => { // top-most ancestor present in this project
+    for (let i = 0; i < 8 && s.parentId; i++) { const p = ids.get(skey(s.source, s.parentId)); if (!p) break; s = p; }
+    return s;
+  };
+  const kids = new Map(), tops = [];
+  for (const s of ss) {
+    const r = rootOf(s);
+    if (r === s) tops.push(s); else (kids.get(skey(r.source, r.id)) || kids.set(skey(r.source, r.id), []).get(skey(r.source, r.id))).push(s);
+  }
+  const shown = c => (act && act.src === c.source && act.id === c.id) || opened.has(skey(c.source, c.id)); // keep the selected/open session visible
+  const fold = (key, label, lvl, open) => h("div", { class: "sfold l" + lvl, "data-k": key, onclick: () => toggleSub(key) }, (open ? "▾ " : "▸ ") + label);
+  const runs = l => { const n = l.filter(c => c.running).length; return n ? " · ● " + n + " running" : ""; };
+  for (const s of tops) {
+    box.append(sessRow(s, s.parentId ? " sub" : "", opened, act));
+    const ch = kids.get(skey(s.source, s.id));
+    if (!ch) continue;
+    const key = skey(s.source, s.id), open = subOpen.has(key) || ch.some(shown);
+    box.append(fold(key, "subagents · " + ch.length + runs(ch), 1, open));
+    if (!open) continue;
+    const groups = new Map();
+    for (const c of ch) {
+      if (!c.group) { box.append(sessRow(c, " sub", opened, act)); continue; }
+      (groups.get(c.group) || groups.set(c.group, []).get(c.group)).push(c);
+    }
+    for (const [g, list] of groups) {
+      const gk = key + "|" + g, gopen = subOpen.has(gk) || list.some(shown);
+      box.append(fold(gk, "⚙ " + (list[0].groupName || g) + " · " + list.length + " agents" + runs(list), 2, gopen));
+      if (gopen) for (const c of list) box.append(sessRow(c, " sub2", opened, act));
+    }
+  }
+}
+// expand the sidebar so the agents of one workflow run (launched from `view`) are visible
+function revealGroup(view, group) {
+  const top = view.id.split("~")[0], f = sessIndex.get(skey(view.src, top));
+  if (!f) return;
+  subMode = "nested"; localStorage.setItem("av.submode", subMode);
+  document.querySelectorAll("#submode [data-sm]").forEach(x => x.classList.toggle("on", x.dataset.sm === subMode));
+  $("#filter").value = "";
+  expanded.add(f.p.key); localStorage.setItem("av.expanded", JSON.stringify([...expanded]));
+  const key = skey(view.src, top);
+  subOpen.add(key); subOpen.add(key + "|" + group);
+  localStorage.setItem("av.subopen", JSON.stringify([...subOpen]));
+  renderSidebar();
+  document.querySelector(`.sfold[data-k="${CSS.escape(key + "|" + group)}"]`)?.scrollIntoView({ block: "center" });
+}
+document.querySelectorAll("#submode [data-sm]").forEach(b => {
+  b.classList.toggle("on", b.dataset.sm === subMode);
+  b.addEventListener("click", () => {
+    subMode = b.dataset.sm; localStorage.setItem("av.submode", subMode);
+    document.querySelectorAll("#submode [data-sm]").forEach(x => x.classList.toggle("on", x.dataset.sm === subMode));
+    renderSidebar();
+  });
+});
 function renderSidebar() {
   const q = $("#filter").value.trim().toLowerCase();
   const list = $("#list"), top = list.scrollTop;
@@ -89,18 +175,9 @@ function renderSidebar() {
       h("span", { class: "pn" }, p.name),
       h("span", { class: "pc" }, ss.length + " · " + fmtRel(p.mtime)));
     const box = h("div", { class: "proj" }, head);
-    if (open) for (const s of ss) {
-      const k = skey(s.source, s.id);
-      box.append(h("div", {
-        class: "sess" + (act && skey(act.src, act.id) === k ? " sel" : "") + (opened.has(k) ? " open" : "") + (s.parentId ? " sub" : ""),
-        title: s.directory,
-        onclick: e => openSession(s.source, s.id, e.ctrlKey || e.shiftKey || e.metaKey),
-      },
-        h("div", { class: "t" }, s.title || "(untitled)"),
-        h("div", { class: "m" }, h("span", { class: "badge " + s.kind }, s.kind), fmtRel(s.mtime),
-          s.parentId ? h("span", { class: "badge" }, "sub") : null,
-          s.archived ? h("span", { class: "badge" }, "archived") : null),
-        h("button", { class: "split", title: "open in new pane", onclick: e => { e.stopPropagation(); openSession(s.source, s.id, true); } }, "split")));
+    if (open) {
+      if (subMode === "nested" && !q) appendNested(box, ss, opened, act);
+      else for (const s of ss) box.append(sessRow(s, s.parentId ? " sub" : "", opened, act));
     }
     frag.append(box);
   }
@@ -213,7 +290,7 @@ class View {
     const prev = this.partData.get(p.id);
     const data = prev ? Object.assign(prev, p) : p;
     this.partData.set(p.id, data);
-    const el = renderPart(data, this.src);
+    const el = renderPart(data, this);
     if (old) {
       const od = old.querySelector("details"), nd = el.querySelector("details");
       if (od && nd && od.open) nd.open = true;
@@ -268,7 +345,7 @@ function toolHint(i) {
   const v = i.command || i.cmd || i.filePath || i.path || i.pattern || i.url || i.query || i.description || "";
   return String(Array.isArray(v) ? v.join(" ") : v).replace(/\s+/g, " ").slice(0, 120);
 }
-function renderPart(p, src) {
+function renderPart(p, view) {
   switch (p.kind) {
     case "text":
       return h("div", { class: "part text" }, h("div", { class: "body" }, p.text || ""));
@@ -284,9 +361,10 @@ function renderPart(p, src) {
       return h("div", { class: "part tool" }, h("details", { class: "fold", open: p.status === "running" },
         h("summary", {}, h("span", { class: "name" }, p.tool || "tool"), h("span", { class: "ttl" }, p.title || toolHint(p.input)),
           h("span", { class: "st " + (p.status || "") }, p.status || "?"),
-          p.link ? h("button", { class: "jump", title: "open the subagent session (shift/ctrl: new pane)", onclick: e => {
-            e.preventDefault(); e.stopPropagation(); openSession(src, p.link.sessionId, e.shiftKey || e.ctrlKey || e.metaKey);
-          } }, "open ↗") : "",
+          p.link ? h("button", { class: "jump", title: p.link.group ? "show this workflow's agents in the sidebar" : "open the subagent session (shift/ctrl: new pane)", onclick: e => {
+            e.preventDefault(); e.stopPropagation();
+            if (p.link.group) revealGroup(view, p.link.group); else openSession(view.src, p.link.sessionId, e.shiftKey || e.ctrlKey || e.metaKey);
+          } }, p.link.group ? "agents ↗" : "open ↗") : "",
           p.durationMs ? (p.durationMs / 1000).toFixed(1) + "s" : ""), inner));
     }
     case "patch":
