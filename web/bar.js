@@ -9,7 +9,10 @@ const Bar = (() => {
     projects: JSON.parse(localStorage.getItem(LS + "projects") || "[]"), // project keys, in display order
     n: Math.min(20, Math.max(1, +localStorage.getItem(LS + "n") || 4)),
   };
-  const save = () => { localStorage.setItem(LS + "projects", JSON.stringify(cfg.projects)); localStorage.setItem(LS + "n", cfg.n); };
+  const FS_MIN = 10, FS_MAX = 44;
+  cfg.fs = Math.min(FS_MAX, Math.max(FS_MIN, +localStorage.getItem(LS + "fs") || 26)); // font size (px) of the projects pane
+  const save = () => { localStorage.setItem(LS + "projects", JSON.stringify(cfg.projects)); localStorage.setItem(LS + "n", cfg.n); localStorage.setItem(LS + "fs", cfg.fs); };
+  const applyFs = () => el.style.setProperty("--bfs", cfg.fs + "px");
 
   const el = h("div", { class: "barbody" });
   let sessions = [], picking = false;
@@ -111,8 +114,11 @@ const isActive = s => s.running;
     const stepper = h("span", { class: "stp", title: "messages shown per session" },
       h("button", { onclick: () => { cfg.n = Math.max(1, cfg.n - 1); save(); render(); } }, "−"), h("span", {}, cfg.n + " msgs"),
       h("button", { onclick: () => { cfg.n = Math.min(20, cfg.n + 1); save(); render(); } }, "+"));
-    const bar = h("div", { class: "pbar" }, h("span", { class: "ttl" }, "Projects"), h("span", { class: "sp" }), stepper,
-      h("button", { class: picking ? "on" : "", title: "add a project", onclick: () => { picking = !picking; render(); } }, "+ project"));
+    const fsBtn = (label, title, d) => h("button", { title, onclick: () => { cfg.fs = Math.min(FS_MAX, Math.max(FS_MIN, cfg.fs + d)); save(); applyFs(); } }, label);
+    const bar = h("div", { class: "pbars" },
+      h("div", { class: "bbar" }, h("span", { class: "ttl" }, "Projects"), h("span", { class: "sp" }),
+        h("button", { class: picking ? "on" : "", title: "add a project", onclick: () => { picking = !picking; render(); } }, "+ project")),
+      h("div", { class: "bbar" }, stepper, h("span", { class: "sp" }), h("span", { class: "stp" }, fsBtn("A−", "smaller text", -2), fsBtn("A+", "larger text", 2))));
     const body = h("div", { class: "projs" },
       cfg.projects.length ? cfg.projects.map(projectEl) : h("div", { class: "dimt pad" }, sessions.length ? "Press “+ project” to follow a project." : "loading…"));
     el.replaceChildren(...[bar, picking ? picker() : null, body].filter(Boolean));
@@ -121,6 +127,7 @@ const isActive = s => s.running;
     for (const [k, c] of cards) if (!live.has(c.el)) { cards.delete(k); fetched.delete(k); }
   }
 
+  applyFs();
   return {
     el,
     update(list) { sessions = list; render(); },
